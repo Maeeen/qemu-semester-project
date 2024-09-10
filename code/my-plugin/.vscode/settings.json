@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "qemu-plugin.h": "c",
+        "x86intrin.h": "c",
+        "capstone.h": "c"
+    },
+    "discord.enabled": false
+}

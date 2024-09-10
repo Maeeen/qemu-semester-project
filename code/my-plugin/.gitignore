@@ -1,0 +1,9 @@
+targets/fork
+targets/fork.o
+targets/hello-asm
+targets/hello-asm.o
+targets/loop-asm
+targets/loop-asm.o
+insns.o
+plugin.o
+plugin.so
