@@ -84,8 +84,12 @@ static void insn_exec_cb(u32 vcpu_index, void* data) {
 static void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   size_t nb_insn = qemu_plugin_tb_n_insns(tb);
   // size_t address = qemu_plugin_tb_vaddr(tb);
-
   for(size_t i = 0; i < nb_insn; i++) {
+    struct qemu_plugin_insn* insn = qemu_plugin_tb_get_insn(tb, i);
+    const char* disas = qemu_plugin_insn_disas(insn);
+  }
+
+  /*for(size_t i = 0; i < nb_insn; i++) {
     struct qemu_plugin_insn* insn = qemu_plugin_tb_get_insn(tb, i);
     size_t size = qemu_plugin_insn_size(insn);
     size_t address = qemu_plugin_insn_vaddr(insn);
@@ -106,7 +110,7 @@ static void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
  
     qemu_plugin_register_vcpu_insn_exec_inline_per_vcpu(insn, QEMU_PLUGIN_INLINE_ADD_U64, (qemu_plugin_u64) {scoreboard, hash(address) * 8}, 1);
     // address += size;
-  }
+  }*/
 }
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info, int argc, char **argv) {
