@@ -1,0 +1,20 @@
+[package]
+name = "fuzzer-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libafl = { version = "*" }
+libafl_bolts = { version = "*" }
+shared_memory = "0.12.4"
+subprocess = "0.2.9"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+opt-level = 3
+debug = true

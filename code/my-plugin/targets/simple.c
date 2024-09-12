@@ -1,3 +1,6 @@
 int main(void) {
-    printf("Hello world\n");
+    char buf[256];
+    scanf("%s", buf);
+    printf("Hello, %s!\n", buf);
+    return 0;
 }
