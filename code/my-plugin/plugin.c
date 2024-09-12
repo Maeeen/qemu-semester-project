@@ -66,12 +66,12 @@ static void vcpu_exit(qemu_plugin_id_t id, unsigned int cpu_index) {
 static void plugin_atexit(qemu_plugin_id_t id, void *p) {
   printf("Plugin exited.\n");
 
-  printf("Dumping coverage\n");
-  FILE* f = fopen("coverage.bin", "w");
-  if (f) {
-    fwrite(shared_mem, sizeof(BITMAP_ENTRY_TYPE), BITMAP_ENTRIES, f);
-    fclose(f);
-  }
+  // printf("Dumping coverage\n");
+  // FILE* f = fopen("coverage.bin", "w");
+  // if (f) {
+  //   fwrite(shared_mem, sizeof(BITMAP_ENTRY_TYPE), BITMAP_ENTRIES, f);
+  //   fclose(f);
+  // }
   printf("Dumping stats\n");
 
   printf("Scoreboard:");
@@ -112,7 +112,9 @@ static void insn_exec_cb(u32 vcpu_index, void* data) {
 
 static void tb_exec_cb(u32 vcpu_index, void* data) {
   struct TbData* tb_data = (struct TbData*)data;
-  shared_mem[(tb_data->cur_location ^ previous_block) % BITMAP_ENTRIES]++;
+  // pf("tb: exec: cur_loc: %zx, prev_loc: %zx, addr: %zx\n", tb_data->cur_location, previous_block, tb_data->cur_location ^ previous_block);
+  if (shared_mem)
+    shared_mem[(tb_data->cur_location ^ previous_block) % BITMAP_ENTRIES]++;
   previous_block = tb_data->cur_location >> 1;
 }
 
@@ -159,11 +161,15 @@ static void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
 
 void setup_shmem() {
   printf("Loading shared memory\n");
-  int fd = shm_open("fuzz-qemu-plugin", O_RDWR, S_IRUSR | S_IWUSR);
+  char* env = getenv("PLUGIN_SHM_ID");
+  if (env == NULL) {
+    printf("Shared memory not in env var, continuing without.\n");
+    return;
+  }
+  int fd = shm_open(env, O_RDWR, S_IRUSR | S_IWUSR);
   if (fd < 0) {
-    printf("Shared memory not found, failed.\n");
-    perror("shm_open");
-    exit(1);
+    printf("Shared memory not found, continuing without.\n");
+    return;
   }
   printf("Shared memory opened\n");
   shared_mem = mmap(NULL, BITMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
@@ -179,7 +185,7 @@ void setup_shmem() {
 QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info, int argc, char **argv) {
   printf("Loaded plugin: Id %" PRIu64 ", running arch %s\n", id, info->target_name);
   setup_shmem();
-  srand(time(NULL));
+  srand(15);
   scoreboard = qemu_plugin_scoreboard_new(sizeof(u8) * sizeof(size_t));
   qemu_plugin_register_vcpu_tb_trans_cb(id, vcpu_tb_trans);
   // qemu_plugin_register_vcpu_init_cb(id, vcpu_init);

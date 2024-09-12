@@ -37,7 +37,7 @@ plugin.so: plugin.o insns.o
 # Targets
 targets/%:
 	@if [ -f targets/$*.c ]; then \
-		$(CC) $(CFLAGS) -O3 -o $@ targets/$*.c; \
+		$(CC) $(CFLAGS) -O0 -o $@ targets/$*.c; \
 	elif [ -f targets/$*.asm ]; then \
 		$(ASM) -f elf64 -o $@.o targets/$*.asm; \
 		$(LD) -o $@ $@.o; \

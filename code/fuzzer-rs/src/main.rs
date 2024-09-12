@@ -1,6 +1,6 @@
 #[cfg(windows)]
 use std::ptr::write_volatile;
-use std::{fs, io::Read, path::PathBuf, ptr::write};
+use std::{fs, io::Read, mem::ManuallyDrop, path::PathBuf, ptr::write};
 
 use libafl::{
     corpus::{InMemoryCorpus, OnDiskCorpus},
@@ -39,9 +39,9 @@ pub fn main() {
     const BITMAP_SIZE: u64 = 65536;
     const SHMEM_SIZE: u64 = BITMAP_SIZE + std::mem::size_of::<u64>() as u64;
 
+
     // Setup shared memory
     let shmem = ShmemConf::new().size(SHMEM_SIZE as usize)
-        .os_id("fuzz-qemu-plugin")
         .create()
         .expect("Failed to create shared memory");
 
@@ -70,33 +70,27 @@ pub fn main() {
     let mut harness = |input: &BytesInput| {
         let target_bytes = input.target_bytes().to_vec();
 
-        let r = 
-            Exec::shell("make -C /work/my-plugin TARGET_BIN=printer run")
+        let status = 
+            Exec::shell("make -s -C /work/my-plugin TARGET_BIN=coverage run")
             .stdin(target_bytes)
+            .env("PLUGIN_SHM_ID", shmem.get_os_id())
             .stdout(subprocess::Redirection::Pipe)
             .stderr(subprocess::Redirection::Pipe)
-            .capture();
+            .capture()
+            .expect("Failed to launch QEMU.");
 
-        match r {
-            Ok(status) => {
-                if !status.success() {
-                    eprintln!("Error: {:?}", status);
-                    ExitKind::Crash
-                } else {
-                    println!("Success. Stdout: {}", status.stdout_str());
-                    ExitKind::Ok
-                }
-            }
-            Err(e) => {
-                eprintln!("Error: {:?}", e);
-                ExitKind::Timeout
-            }
+        if !status.success() {
+            eprintln!("Error: {:?} {} {}", status.exit_status, status.stdout_str(), status.stderr_str());
+            ExitKind::Crash
+        } else {
+            println!("Success. Stdout: {} {}", status.stdout_str(), status.stderr_str());
+            ExitKind::Ok
         }
     };
 
     // Create an observation channel using the signals map
     let observer = unsafe {
-        StdMapObserver::from_mut_ptr("signals", signals, BITMAP_SIZE as usize)
+        StdMapObserver::from_mut_ptr("signals", signals, BITMAP_SIZE as usize).track_novelties()
     };
     // Feedback to rate the interestingness of an input
     let mut feedback = MaxMapFeedback::new(&observer);
@@ -121,9 +115,9 @@ pub fn main() {
     )
     .unwrap();
 
-    if state.metadata_map().get::<Tokens>().is_none() {
-        state.add_metadata(Tokens::from([b"FOO".to_vec(), b"BAR".to_vec()]));
-    }
+    // if state.metadata_map().get::<Tokens>().is_none() {
+    //     state.add_metadata(Tokens::from([b"FOO".to_vec(), b"BAR".to_vec()]));
+    // }
 
     // The Monitor trait define how the fuzzer stats are reported to the user
     let monitor = SimpleMonitor::new(|s| println!("{s}"));

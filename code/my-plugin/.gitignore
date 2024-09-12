@@ -4,6 +4,8 @@ targets/hello-asm
 targets/hello-asm.o
 targets/loop-asm
 targets/loop-asm.o
+targets/coverage.o
+targets/coverage
 insns.o
 plugin.o
 plugin.so

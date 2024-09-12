@@ -1,5 +1,6 @@
 use shared_memory::{ Shmem, ShmemConf };
 use subprocess::Exec;
+use std::mem::ManuallyDrop;
 
 pub fn main() {
     const BITMAP_SIZE: u64 = 65536;
@@ -20,7 +21,7 @@ pub fn main() {
     println!("Running the plugin");
 
     // Setup the subprocess
-    let s = Exec::shell("make -C /work/my-plugin TARGET_BIN=coverage run")
+    let s = Exec::shell("make -C /work/my-plugin TARGET_BIN=hello run")
         .stdout(subprocess::Redirection::Pipe)
         .stderr(subprocess::Redirection::Pipe)
         .stdin("Marwan")
