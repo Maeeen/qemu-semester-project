@@ -22,11 +22,15 @@ pub fn main() {
 
     // Setup the subprocess
     let s = Exec::shell("make -C /work/my-plugin TARGET_BIN=hello run")
+        .env("__AFL_SHM_ID", shmem.get_os_id())
         .stdout(subprocess::Redirection::Pipe)
         .stderr(subprocess::Redirection::Pipe)
         .stdin("Marwan")
         // .stdin(subprocess::Redirection::Pipe)
         .capture().expect("Failed to execute command");
+
+    // Sleep for 10s
+    std::thread::sleep(std::time::Duration::from_secs(10));
     println!("stdout: {}", s.stdout_str());
 
 

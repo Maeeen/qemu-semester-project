@@ -1,6 +1,7 @@
 int main(void) {
     int i = 0;
     char str[15] = { 0 };
+    printf("[TARGET] Enter a string: ");
     scanf("%10s", str);
     printf("You entered: %s\n", str);
     if (str[0] == 'b') {

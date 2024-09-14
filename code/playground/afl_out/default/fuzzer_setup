@@ -1,0 +1,8 @@
+# environment variables:
+AFL_CUSTOM_INFO_PROGRAM=/home/ubuntu/qemu/build/qemu-x86_64
+AFL_CUSTOM_INFO_PROGRAM_ARGV=-plugin /work/my-plugin/plugin.so /work/my-plugin/targets/coverage
+AFL_CUSTOM_INFO_OUT=afl_out//default
+AFL_DEBUG=1
+AFL_SKIP_BIN_CHECK=1
+# command line:
+'afl-fuzz' '-i' 'afl_in/' '-o' 'afl_out/' '-t' '1000' '--' '/home/ubuntu/qemu/build/qemu-x86_64' '-plugin' '/work/my-plugin/plugin.so' '/work/my-plugin/targets/coverage'

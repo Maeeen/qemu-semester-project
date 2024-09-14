@@ -10,22 +10,193 @@
 #include "types.h"
 #include "insns.h"
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #define DEBUG
 
 #ifdef DEBUG
-#define pf(fmt, ...) printf("[Plugin] " fmt, ##__VA_ARGS__)
+#define pf(fmt, ...) printf("[Plugin %zu] " fmt, getpid(), ##__VA_ARGS__)
 #define pp(fmt, ...) printf(fmt, ##__VA_ARGS__)
 #else
 #define pf(fmt, ...)
 #define pp(fmt, ...)
 #endif
 
-QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
+/// AFL Instrumentation detail defs
+// 64kb bitmap
+#define BITMAP_SIZE 65536
+#define BITMAP_ENTRY_TYPE unsigned char
+#define BITMAP_ENTRIES (BITMAP_SIZE / sizeof(BITMAP_ENTRY_TYPE))
 
-u8 hash(size_t address) {
-  return (u8) (address % 256);
+/// Globals
+static const char SHM_ENV_VAR[] = "__AFL_SHM_ID";
+static const int FORKSRV_FD_IN = 198;
+static const int FORKSRV_FD_OUT = 199;
+
+/// Instrumentation specific
+BITMAP_ENTRY_TYPE* shared_mem = 0;
+unsigned short previous_block = 0x0;
+
+/// Debug
+extern char **environ;
+void show_envvar() {
+  char **s = environ;
+
+  for (; *s; s++) {
+    pp("%s\n", *s);
+  }
+
+  return 0;
 }
+
+/// Setup shared memory
+void setup_shmem() {
+  pf("Loading shared memory\n");
+  char* env = getenv(SHM_ENV_VAR);
+  if (env == NULL) {
+    pf("Shared memory not in env var, aborting.\n");
+    return;
+  }
+  pf("Got env var: %s\n", env);
+  int shm_id = atoi(env);
+  if (shm_id <= 0) {
+    pf("Shared memory ID invalid, aborting.\n");
+    return;
+  }
+  shared_mem = shmat(shm_id, NULL, 0);
+  if (shared_mem == (void*)-1) {
+    pf("Failed to attach shared memory, aborting.\n");
+    return;
+  }
+  pf("Shared memory loaded.\n");
+}
+
+/// AFL utils
+static int is_afl_here(void) {
+  return getenv(SHM_ENV_VAR) != NULL;
+}
+static int afl_read(uint32_t *out) {
+  if (is_afl_here() == 0) {
+    sleep(1);
+    return 0;
+  }
+
+  ssize_t res;
+
+  res = read(FORKSRV_FD_IN, out, 4);
+
+  if (res == -1) {
+    if (errno == EINTR) {
+      fprintf(stderr, "Interrupted while waiting for AFL message, aborting.\n");
+    } else {
+      fprintf(stderr, "Failed to read four bytes from AFL pipe, aborting.\n");
+    }
+    return -1;
+  } else if (res != 4) {
+    return -1;
+  } else {
+    return 0;
+  }
+}
+static int afl_write(uint32_t value) {
+  if (is_afl_here() == 0) {
+    sleep(1);
+    return 0;
+  }
+
+  ssize_t res;
+
+  res = write(FORKSRV_FD_OUT, &value, 4);
+
+  if (res == -1) {
+    if (errno == EINTR) {
+      fprintf(stderr, "Interrupted while sending message to AFL, aborting.\n");
+    } else {
+      fprintf(stderr, "Failed to write four bytes to AFL pipe, aborting.\n");
+    }
+    return -1;
+  } else if (res != 4) {
+    return -1;
+  } else {
+    return 0;
+  }
+}
+
+/// Setup fork server
+void fork_server_loop() {
+  if (afl_write(0)) {
+    perror("Failed sending alive message to AFL");
+    exit(1);
+  }
+  pf("Sent alive message to AFL\n");
+
+  setup_shmem();
+  if (shared_mem == NULL) {
+    pf("Shared memory not found, exiting. AFL is here: %d\n", is_afl_here());
+    if (!is_afl_here()) {
+      pf("AFL is not here, continuing for debug purposes.\n");
+    } else {
+      pf("AFL is here, but shared memory is not, exiting.\n");
+      exit(1);
+    }
+  }
+
+  while (true) {
+    printf("Waiting for AFL message.\n");
+    sleep(1);
+    uint32_t afl_msg;
+    if (afl_read(&afl_msg)) {
+      pf("Failed to read from AFL.\n");
+      exit(1);
+    }
+    printf("Read %d from AFL once. Forking\n", afl_msg);
+    // memset(shared_mem, 0, BITMAP_SIZE);
+    pid_t child = fork();
+    if (child < 0) {
+      printf("[FS] Could not fork.\n");
+      perror("fork");
+      exit(1);
+    }
+
+    printf("[FS] Hi, Child is %d\n", child);
+    if (child) {
+      // We know the child
+      pp("[FS] Forked child with PID: %d\n", child);
+      if (afl_write(child)) {
+        pf("[FS] Failed to write to AFL child PID.");
+        exit(1);
+      }
+
+      int child_status;
+      if (waitpid(child, &child_status, 0) < 0) {
+        perror("waitpid");
+        exit(1);
+      }
+
+      pp("[FS] Child finished\n");
+
+      if (afl_write(child_status)) {
+        pf("[FS] Failed to write to AFL child status.");
+        exit(1);
+      }
+
+      pp("[FS] Wrote child status\n");
+
+      // wait 10s
+    } else {
+      // We are the child
+      pp("[FS] I am the child\n");
+      close(FORKSRV_FD_IN);
+      close(FORKSRV_FD_OUT);
+      return;
+    }
+
+    // As a child, we continue to run the target
+  }
+}
+
+QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
 /// Count instructions defs 
 size_t counts[G_MAXUINT8] = { 0 };
@@ -37,18 +208,11 @@ struct InstructionData {
   size_t address;
 };
 
-/// AFL Instrumentation detail defs
-// 64kb bitmap
-#define BITMAP_SIZE 65536
-#define BITMAP_ENTRY_TYPE unsigned char
-#define BITMAP_ENTRIES (BITMAP_SIZE / sizeof(BITMAP_ENTRY_TYPE))
 
-size_t previous_block = 0x0;
 struct TbData {
   size_t address;
-  size_t cur_location;
+  unsigned short cur_location;
 };
-BITMAP_ENTRY_TYPE* shared_mem = 0;
 
 static void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
   pf("Init vcpu %u\n", cpu_index);
@@ -64,7 +228,7 @@ static void vcpu_exit(qemu_plugin_id_t id, unsigned int cpu_index) {
 }
 
 static void plugin_atexit(qemu_plugin_id_t id, void *p) {
-  printf("Plugin exited.\n");
+  pf("Plugin exited.\n");
 
   // printf("Dumping coverage\n");
   // FILE* f = fopen("coverage.bin", "w");
@@ -72,26 +236,26 @@ static void plugin_atexit(qemu_plugin_id_t id, void *p) {
   //   fwrite(shared_mem, sizeof(BITMAP_ENTRY_TYPE), BITMAP_ENTRIES, f);
   //   fclose(f);
   // }
-  printf("Dumping stats\n");
+  pf("Exited as %zu.\n", getpid());
 
-  printf("Scoreboard:");
+  // printf("Scoreboard:");
 
-  if (scoreboard) {
-    size_t* counts = qemu_plugin_scoreboard_find(scoreboard, 0);
-    for(size_t i = 0; i < G_MAXUINT8; i++) {
-      if (counts[i] > 0)
-        printf("%zx: %lu\n", i, counts[i]);
-    }
+  // if (scoreboard) {
+  //   size_t* counts = qemu_plugin_scoreboard_find(scoreboard, 0);
+  //   for(size_t i = 0; i < G_MAXUINT8; i++) {
+  //     if (counts[i] > 0)
+  //       printf("%zx: %lu\n", i, counts[i]);
+  //   }
 
-    qemu_plugin_scoreboard_free(scoreboard);
-    scoreboard = NULL;
-  }
+  //   qemu_plugin_scoreboard_free(scoreboard);
+  //   scoreboard = NULL;
+  // }
 
-  printf("Shared mem");
-  for(size_t i = 0; i < G_MAXUINT8; i++) {
-    if (counts[i] > 0)
-      printf("%zx: %lu\n", i, counts[i]);
-  }
+  // printf("Shared mem");
+  // for(size_t i = 0; i < G_MAXUINT8; i++) {
+  //   if (counts[i] > 0)
+  //     printf("%zx: %lu\n", i, counts[i]);
+  // }
 }
 
 static void insn_exec_cb(u32 vcpu_index, void* data) {
@@ -159,33 +323,18 @@ static void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   // }
 }
 
-void setup_shmem() {
-  printf("Loading shared memory\n");
-  char* env = getenv("PLUGIN_SHM_ID");
-  if (env == NULL) {
-    printf("Shared memory not in env var, continuing without.\n");
-    return;
-  }
-  int fd = shm_open(env, O_RDWR, S_IRUSR | S_IWUSR);
-  if (fd < 0) {
-    printf("Shared memory not found, continuing without.\n");
-    return;
-  }
-  printf("Shared memory opened\n");
-  shared_mem = mmap(NULL, BITMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-  if (shared_mem == MAP_FAILED) {
-    perror("mmap");
-    exit(1);
-  }
-
-  printf("Shared memory loaded\n");
-  printf("Shared memory: %p\n", shared_mem);
-}
-
 QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info, int argc, char **argv) {
-  printf("Loaded plugin: Id %" PRIu64 ", running arch %s\n", id, info->target_name);
-  setup_shmem();
+  pf("Loaded plugin: Id %" PRIu64 ", running arch %s\n", id, info->target_name);
   srand(15);
+  pid_t f;
+  if (f = fork()) {
+    pf("Forking, child is %zu. I am %zu\n", f, getpid());
+    sleep(100);
+    exit(1);
+  } else {
+    pf("Forked, (child, %zu). I am %zu\n", f, getpid());
+  }
+  // fork_server_loop();
   scoreboard = qemu_plugin_scoreboard_new(sizeof(u8) * sizeof(size_t));
   qemu_plugin_register_vcpu_tb_trans_cb(id, vcpu_tb_trans);
   // qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
