@@ -7,8 +7,13 @@ CFLAGS= -Wall -g -O -fPIC
 RM=rm -f
 DBG=gdb
 
+ROOT_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
+
 TARGET_BIN=hello-asm
 TARGET=targets/$(TARGET_BIN)
+TARGET_FULLPATH:=$(ROOT_DIR)/$(TARGET)
+
+FS_RUN=targets/fs-c
 
 QEMUPATH=/home/ubuntu/qemu
 CFLAGS += -I$(QEMUPATH)/include/qemu
@@ -18,7 +23,7 @@ CFLAGS += $(shell pkg-config --cflags capstone)
 .SECONDARY:
 .PHONY: all clean
 
-all: plugin.so $(TARGET)
+all: plugin.so $(TARGET) $(FS_RUN)
 
 # plugin so
 # then no dots
@@ -35,11 +40,12 @@ plugin.so: plugin.o insns.o
 	$(LINK.c) -shared $^ -o $@
 
 # Targets
+# $(ASM) -f elf64 -DTARGET='"./$(TARGET)"' -o $@.o targets/$*.asm;
 targets/%:
 	@if [ -f targets/$*.c ]; then \
-		$(CC) $(CFLAGS) -O0 -o $@ targets/$*.c; \
+		$(CC) $(CFLAGS) -DTARGET='"$(TARGET_FULLPATH)"' -O0 -o $@ targets/$*.c; \
 	elif [ -f targets/$*.asm ]; then \
-		$(ASM) -f elf64 -o $@.o targets/$*.asm; \
+		$(ASM) -f elf64 -DTARGET='"$(TARGET_FULLPATH)"' -o $@.o targets/$*.asm; \
 		$(LD) -o $@ $@.o; \
 	else \
 		echo "No source file found for $*"; \
@@ -49,5 +55,14 @@ targets/%:
 run: $(TARGET) plugin.so
 	$(QEMUPATH)/build/qemu-x86_64 -plugin ./plugin.so ./$(TARGET)
 
+run-fs: $(TARGET) $(FS_RUN) plugin.so
+	$(QEMUPATH)/build/qemu-x86_64 -plugin ./plugin.so ./$(FS_RUN)
+
+run-fs-nnqem: $(TARGET) $(FS_RUN)
+	./$(FS_RUN)
+
 debug: $(TARGET) plugin.so
 	$(DBG) --args $(QEMUPATH)/build/qemu-x86_64 -plugin ./plugin.so ./$(TARGET)
+
+debug-fs: $(TARGET) $(FS_RUN) plugin.so
+	$(DBG) --args $(QEMUPATH)/build/qemu-x86_64 -plugin ./plugin.so ./$(FS_RUN)

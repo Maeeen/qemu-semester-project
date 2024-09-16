@@ -1,0 +1,1 @@
+AFL_SKIP_BIN_CHECK=1 AFL_DEBUG=1 afl-fuzz -t 1000 -i ./afl_in/ -o ./afl_out/ "$@"

@@ -12,22 +12,12 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-
-#define DEBUG
-
-#ifdef DEBUG
-#define pf(fmt, ...) printf("[Plugin %zu] " fmt, getpid(), ##__VA_ARGS__)
-#define pp(fmt, ...) printf(fmt, ##__VA_ARGS__)
-#else
-#define pf(fmt, ...)
-#define pp(fmt, ...)
-#endif
+#include <sys/shm.h>
 
 /// AFL Instrumentation detail defs
-// 64kb bitmap
-#define BITMAP_SIZE 65536
 #define BITMAP_ENTRY_TYPE unsigned char
-#define BITMAP_ENTRIES (BITMAP_SIZE / sizeof(BITMAP_ENTRY_TYPE))
+
+#define CUSTOM_BITMAP 200
 
 /// Globals
 static const char SHM_ENV_VAR[] = "__AFL_SHM_ID";
@@ -48,28 +38,6 @@ void show_envvar() {
   }
 
   return 0;
-}
-
-/// Setup shared memory
-void setup_shmem() {
-  pf("Loading shared memory\n");
-  char* env = getenv(SHM_ENV_VAR);
-  if (env == NULL) {
-    pf("Shared memory not in env var, aborting.\n");
-    return;
-  }
-  pf("Got env var: %s\n", env);
-  int shm_id = atoi(env);
-  if (shm_id <= 0) {
-    pf("Shared memory ID invalid, aborting.\n");
-    return;
-  }
-  shared_mem = shmat(shm_id, NULL, 0);
-  if (shared_mem == (void*)-1) {
-    pf("Failed to attach shared memory, aborting.\n");
-    return;
-  }
-  pf("Shared memory loaded.\n");
 }
 
 /// AFL utils
@@ -123,14 +91,132 @@ static int afl_write(uint32_t value) {
   }
 }
 
+/// Setup shared memory
+void setup_shmem() {
+  if (!is_afl_here()) {
+    shared_mem = malloc(CUSTOM_BITMAP);
+  }
+
+  pf("Loading shared memory\n");
+  char* env = getenv(SHM_ENV_VAR);
+  if (env == NULL) {
+    pf("Shared memory not in env var, aborting.\n");
+    return;
+  }
+  pf("Got env var: %s\n", env);
+  int shm_id = atoi(env);
+  if (shm_id <= 0) {
+    pf("Shared memory ID invalid, aborting.\n");
+    return;
+  }
+  shared_mem = shmat(shm_id, NULL, 0);
+  if ((int) shared_mem == -1) {
+    pf("Failed to attach shared memory, aborting.\n");
+    return;
+  }
+
+  // Shared memory size
+  struct shmid_ds buf;
+  shmctl(shm_id, IPC_STAT, &buf);
+  pf("Shared memory size: %zu\n", buf.shm_segsz);
+  pf("Shared memory loaded (hi).\n");
+}
+
+void init_fork_server() {
+  // if (afl_write(0)) {
+  //   perror("Failed sending alive message to AFL");
+  //   exit(1);
+  // }
+  // pf("Sent alive message to AFL\n");
+
+  setup_shmem();
+  if (shared_mem == NULL) {
+    pf("Shared memory not found, exiting. AFL is here: %d\n", is_afl_here());
+    if (!is_afl_here()) {
+      pf("AFL is not here, continuing for debug purposes.\n");
+    } else {
+      pf("AFL is here, but shared memory is not, exiting.\n");
+      exit(1);
+    }
+  }
+}
+
+size_t map_size() {
+  if (!is_afl_here()) {
+    return CUSTOM_BITMAP;
+  }
+
+  char* env = getenv(SHM_ENV_VAR);
+  if (env == NULL) {
+    pf("Shared memory not in env var, aborting.\n");
+    return 0;
+  }
+  // get size via shmctl
+  int shm_id = atoi(env);
+  if (shm_id <= 0) {
+    pf("Shared memory ID invalid, aborting.\n");
+    return 0;
+  }
+  struct shmid_ds buf;
+  shmctl(shm_id, IPC_STAT, &buf);
+  return buf.shm_segsz;
+}
+
+void clear_map() {
+  if (is_afl_here() && shared_mem) {
+    memset(shared_mem, 0, map_size());
+  }
+}
+
+static void on_syscall(qemu_plugin_id_t id, unsigned int vcpu_index, int64_t num, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7, uint64_t a8) {
+  if (num == 500) {
+    switch(a1) {
+      case 0:
+        pf("syscall: hello\n");
+        afl_write(0);
+        pf("syscall: hello end\n");
+        break;
+      case 1:
+        pf("syscall: ready\n");
+        uint32_t dummy;
+        afl_read(&dummy);
+        pf("syscall: ready end\n");
+        clear_map();
+        break;
+      case 2:
+        pf("syscall: pid %ld\n", a2);
+        afl_write(a2);
+        pf("syscall: pid end %ld\n", a2);
+        break;
+      case 3:
+        pf("syscall: status %ld\n", a2);
+        afl_write(a2);
+        pf("syscall: status end %ld\n", a2);
+        if (!is_afl_here()) {
+          dump_cov();
+          exit(-1);
+        }
+        break;
+      default:
+        pf("syscall: unknown rdi=%ld rsi=%ld\n", a1, a2);
+        break;
+    }
+    // sleep(1);
+  }
+}
+
+void dump_cov() {
+  if (shared_mem) {
+    FILE* f = fopen("coverage.bin", "w");
+    if (f) {
+      fwrite(shared_mem, sizeof(BITMAP_ENTRY_TYPE), map_size(), f);
+      fclose(f);
+    }
+  }
+}
+
 /// Setup fork server
 void fork_server_loop() {
-  if (afl_write(0)) {
-    perror("Failed sending alive message to AFL");
-    exit(1);
-  }
-  pf("Sent alive message to AFL\n");
-
   setup_shmem();
   if (shared_mem == NULL) {
     pf("Shared memory not found, exiting. AFL is here: %d\n", is_afl_here());
@@ -143,23 +229,22 @@ void fork_server_loop() {
   }
 
   while (true) {
-    printf("Waiting for AFL message.\n");
-    sleep(1);
+    pf("Waiting for AFL message.\n");
     uint32_t afl_msg;
     if (afl_read(&afl_msg)) {
       pf("Failed to read from AFL.\n");
       exit(1);
     }
-    printf("Read %d from AFL once. Forking\n", afl_msg);
+    pf("Read %d from AFL once. Forking\n", afl_msg);
     // memset(shared_mem, 0, BITMAP_SIZE);
     pid_t child = fork();
     if (child < 0) {
-      printf("[FS] Could not fork.\n");
+      pf("[FS] Could not fork.\n");
       perror("fork");
       exit(1);
     }
 
-    printf("[FS] Hi, Child is %d\n", child);
+    pf("[FS] Hi, Child is %d\n", child);
     if (child) {
       // We know the child
       pp("[FS] Forked child with PID: %d\n", child);
@@ -187,8 +272,6 @@ void fork_server_loop() {
     } else {
       // We are the child
       pp("[FS] I am the child\n");
-      close(FORKSRV_FD_IN);
-      close(FORKSRV_FD_OUT);
       return;
     }
 
@@ -207,7 +290,6 @@ struct InstructionData {
   const char* disassembly;
   size_t address;
 };
-
 
 struct TbData {
   size_t address;
@@ -273,12 +355,11 @@ static void insn_exec_cb(u32 vcpu_index, void* data) {
   pp("\n");
 }
 
-
 static void tb_exec_cb(u32 vcpu_index, void* data) {
   struct TbData* tb_data = (struct TbData*)data;
   // pf("tb: exec: cur_loc: %zx, prev_loc: %zx, addr: %zx\n", tb_data->cur_location, previous_block, tb_data->cur_location ^ previous_block);
   if (shared_mem)
-    shared_mem[(tb_data->cur_location ^ previous_block) % BITMAP_ENTRIES]++;
+    shared_mem[(tb_data->cur_location ^ previous_block) % (map_size() / sizeof(BITMAP_ENTRY_TYPE))]++;
   previous_block = tb_data->cur_location >> 1;
 }
 
@@ -326,19 +407,13 @@ static void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
 QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info, int argc, char **argv) {
   pf("Loaded plugin: Id %" PRIu64 ", running arch %s\n", id, info->target_name);
   srand(15);
-  pid_t f;
-  if (f = fork()) {
-    pf("Forking, child is %zu. I am %zu\n", f, getpid());
-    sleep(100);
-    exit(1);
-  } else {
-    pf("Forked, (child, %zu). I am %zu\n", f, getpid());
-  }
   // fork_server_loop();
-  scoreboard = qemu_plugin_scoreboard_new(sizeof(u8) * sizeof(size_t));
-  qemu_plugin_register_vcpu_tb_trans_cb(id, vcpu_tb_trans);
+  // scoreboard = qemu_plugin_scoreboard_new(sizeof(u8) * sizeof(size_t));
   // qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
   // qemu_plugin_register_vcpu_exit_cb(id, vcpu_exit);
-  qemu_plugin_register_atexit_cb(id, plugin_atexit, NULL);
+  qemu_plugin_register_vcpu_syscall_cb(id, on_syscall);
+  qemu_plugin_register_vcpu_tb_trans_cb(id, vcpu_tb_trans);
+  // qemu_plugin_register_atexit_cb(id, plugin_atexit, NULL);
+  init_fork_server();
   return 0;
 }

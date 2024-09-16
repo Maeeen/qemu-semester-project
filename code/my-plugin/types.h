@@ -3,6 +3,16 @@
 #include <stdlib.h>
 #include <stddef.h>
 
+// #define DEBUG
+
+#ifdef DEBUG
+#define pf(fmt, ...) printf("[Plugin %zu] " fmt, getpid(), ##__VA_ARGS__)
+#define pp(fmt, ...) printf(fmt, ##__VA_ARGS__)
+#else
+#define pf(fmt, ...)
+#define pp(fmt, ...)
+#endif
+
 typedef unsigned long long u64;
 typedef unsigned int u32;
 typedef unsigned short u16;
