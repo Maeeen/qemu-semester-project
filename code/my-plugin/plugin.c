@@ -27,6 +27,7 @@ static const int FORKSRV_FD_OUT = 199;
 /// Instrumentation specific
 BITMAP_ENTRY_TYPE* shared_mem = 0;
 unsigned short previous_block = 0x0;
+pid_t fs_pid = 0;
 
 /// Debug
 extern char **environ;
@@ -169,7 +170,7 @@ void clear_map() {
 }
 
 static void on_syscall(qemu_plugin_id_t id, unsigned int vcpu_index, int64_t num, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7, uint64_t a8) {
-  if (num == 500) {
+  if (num == 500 && getpid() == fs_pid) {
     switch(a1) {
       case 0:
         pf("syscall: hello\n");
@@ -193,6 +194,7 @@ static void on_syscall(qemu_plugin_id_t id, unsigned int vcpu_index, int64_t num
         afl_write(a2);
         pf("syscall: status end %ld\n", a2);
         if (!is_afl_here()) {
+          pf("dumping coverage data\n");
           dump_cov();
           exit(-1);
         }
@@ -202,6 +204,12 @@ static void on_syscall(qemu_plugin_id_t id, unsigned int vcpu_index, int64_t num
         break;
     }
     // sleep(1);
+  }
+  if (num == 1) {
+    pf("syscall: vcpu %zu: write(%ld)\n", vcpu_index, a1);
+  }
+  if (num == 56 || num == 57) {
+    pf("syscall: vcpu %zu: fork %zu\n", vcpu_index);
   }
 }
 
@@ -357,9 +365,11 @@ static void insn_exec_cb(u32 vcpu_index, void* data) {
 
 static void tb_exec_cb(u32 vcpu_index, void* data) {
   struct TbData* tb_data = (struct TbData*)data;
-  // pf("tb: exec: cur_loc: %zx, prev_loc: %zx, addr: %zx\n", tb_data->cur_location, previous_block, tb_data->cur_location ^ previous_block);
-  if (shared_mem)
+  // pf("tb: exec: vcpu: %zu fs pid: %zu, pid: %zu cur_loc: %zx, prev_loc: %zx, addr: %zx\n", vcpu_index, fs_pid, getpid(), tb_data->cur_location, previous_block, tb_data->cur_location ^ previous_block);
+  if (/* fs_pid != getpid() && */ shared_mem) {
+    pf("Executing fuzzed. Current location: %zx, previous block: %zx, incrementing indx: %zx, value: %d\n", tb_data->cur_location, previous_block, (tb_data->cur_location ^ previous_block) % (map_size() / sizeof(BITMAP_ENTRY_TYPE)), shared_mem[(tb_data->cur_location ^ previous_block) % (map_size() / sizeof(BITMAP_ENTRY_TYPE))]);
     shared_mem[(tb_data->cur_location ^ previous_block) % (map_size() / sizeof(BITMAP_ENTRY_TYPE))]++;
+  }
   previous_block = tb_data->cur_location >> 1;
 }
 
@@ -368,7 +378,19 @@ static void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
 
   struct TbData* tb_data = malloc(sizeof(struct TbData));
   tb_data->address = qemu_plugin_tb_vaddr(tb);
-  tb_data->cur_location = rand();
+  tb_data->cur_location = tb_data->address;
+
+  // print code
+  if (fs_pid != getpid()) {
+    pf("Translating TB: Address: %08x, cur location: %08x nb_insn: %zu\n", tb_data->address, tb_data->cur_location, nb_insn);
+    for(size_t i = 0; i < nb_insn; i++) {
+      struct qemu_plugin_insn* insn = qemu_plugin_tb_get_insn(tb, i);
+      if (insn) {
+        const char* disas = qemu_plugin_insn_disas(insn);
+        pf(">>> %zx %s\n", qemu_plugin_insn_haddr(insn), disas);
+      }
+    }
+  }
 
   qemu_plugin_register_vcpu_tb_exec_cb(tb, tb_exec_cb, QEMU_PLUGIN_CB_NO_REGS, tb_data);
 
@@ -406,6 +428,7 @@ static void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info, int argc, char **argv) {
   pf("Loaded plugin: Id %" PRIu64 ", running arch %s\n", id, info->target_name);
+  fs_pid = getpid();
   srand(15);
   // fork_server_loop();
   // scoreboard = qemu_plugin_scoreboard_new(sizeof(u8) * sizeof(size_t));

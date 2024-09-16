@@ -39,6 +39,9 @@ clean:
 plugin.so: plugin.o insns.o
 	$(LINK.c) -shared $^ -o $@
 
+targets/coverage:
+	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -nostdlib -o $@ targets/coverage.c
+
 # Targets
 # $(ASM) -f elf64 -DTARGET='"./$(TARGET)"' -o $@.o targets/$*.asm;
 targets/%:
