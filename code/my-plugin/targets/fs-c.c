@@ -19,7 +19,8 @@ int main(void) {
         syscall(SS, 1); // ready
         pid_t child = fork();
         if (child == 0) {
-            execve(TARGET, NULL, NULL);
+            pf("[FS] Children running.");
+            execv(TARGET, NULL);
             pf("[FS] Failed to exec\n");
             return -1;
         } else {

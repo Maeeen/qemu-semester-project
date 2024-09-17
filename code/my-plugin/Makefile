@@ -40,7 +40,10 @@ plugin.so: plugin.o insns.o
 	$(LINK.c) -shared $^ -o $@
 
 targets/coverage:
-	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -nostdlib -o $@ targets/coverage.c
+	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ targets/coverage.c
+
+targets/dead:
+	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ targets/dead.c
 
 # Targets
 # $(ASM) -f elf64 -DTARGET='"./$(TARGET)"' -o $@.o targets/$*.asm;
@@ -48,6 +51,7 @@ targets/%:
 	@if [ -f targets/$*.c ]; then \
 		$(CC) $(CFLAGS) -DTARGET='"$(TARGET_FULLPATH)"' -O0 -o $@ targets/$*.c; \
 	elif [ -f targets/$*.asm ]; then \
+		echo "Target is $(TARGET_FULLPATH)"; \
 		$(ASM) -f elf64 -DTARGET='"$(TARGET_FULLPATH)"' -o $@.o targets/$*.asm; \
 		$(LD) -o $@ $@.o; \
 	else \

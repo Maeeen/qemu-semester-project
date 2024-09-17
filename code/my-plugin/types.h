@@ -3,10 +3,8 @@
 #include <stdlib.h>
 #include <stddef.h>
 
-// #define DEBUG
-
 #ifdef DEBUG
-#define pf(fmt, ...) printf("[Plugin %zu] " fmt, getpid(), ##__VA_ARGS__)
+#define pf(fmt, ...) printf("[Plugin %zu, %zi] " fmt, getpid(), gettid(), ##__VA_ARGS__)
 #define pp(fmt, ...) printf(fmt, ##__VA_ARGS__)
 #else
 #define pf(fmt, ...)

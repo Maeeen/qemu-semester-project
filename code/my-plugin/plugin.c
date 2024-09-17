@@ -20,6 +20,7 @@
 #define CUSTOM_BITMAP 200
 
 /// Globals
+static int is_forked = 0;
 static const char SHM_ENV_VAR[] = "__AFL_SHM_ID";
 static const int FORKSRV_FD_IN = 198;
 static const int FORKSRV_FD_OUT = 199;
@@ -95,7 +96,8 @@ static int afl_write(uint32_t value) {
 /// Setup shared memory
 void setup_shmem() {
   if (!is_afl_here()) {
-    shared_mem = malloc(CUSTOM_BITMAP);
+    int shmid = shmget(IPC_PRIVATE, CUSTOM_BITMAP, IPC_CREAT | 0666);
+    shared_mem = (char *)shmat(shmid, NULL, 0);
   }
 
   pf("Loading shared memory\n");
@@ -170,6 +172,9 @@ void clear_map() {
 }
 
 static void on_syscall(qemu_plugin_id_t id, unsigned int vcpu_index, int64_t num, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7, uint64_t a8) {
+  if (num == 501) {
+    pf("syscall 501: vcpu %zu: %zu\n", vcpu_index);
+  }
   if (num == 500 && getpid() == fs_pid) {
     switch(a1) {
       case 0:
@@ -216,6 +221,7 @@ static void on_syscall(qemu_plugin_id_t id, unsigned int vcpu_index, int64_t num
 void dump_cov() {
   if (shared_mem) {
     FILE* f = fopen("coverage.bin", "w");
+    printf("Dumping coverage of size %zu\n", map_size());
     if (f) {
       fwrite(shared_mem, sizeof(BITMAP_ENTRY_TYPE), map_size(), f);
       fclose(f);
@@ -302,15 +308,49 @@ struct InstructionData {
 struct TbData {
   size_t address;
   unsigned short cur_location;
+  const char* insn;
 };
+
+static void setup_fs() {
+  pf("[FS] Shared memory setup\n");
+  setup_shmem();
+  pid_t child;
+  pf("[FS] Sending hello.\n");
+  afl_write(0); // ohayo onichan :3
+
+  while(1) {
+    pf("[FS] Waiting for AFL to launch something.\n");
+    uint32_t dummy;
+    afl_read(&dummy);
+    pf("[FS] Got signal from AFL. Forking.\n");
+    child = fork();
+    if (child == 0) {
+      break;
+    }
+    pf("[FS] Forked child %d\n", child);
+    afl_write(child);
+    int status;
+    waitpid(child, &status, 0);
+    pf("[FS] Child exited with status %d\n", child);
+    afl_write(status);
+    if (!is_afl_here()) {
+      dump_cov();
+      exit(-1);
+    }
+  }
+}
 
 static void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
   pf("Init vcpu %u\n", cpu_index);
-  size_t* counts = qemu_plugin_scoreboard_find(scoreboard, cpu_index);
+  if (!is_forked) {
+    is_forked = 1;
+    setup_fs();
+  }
+  /*size_t* counts = qemu_plugin_scoreboard_find(scoreboard, cpu_index);
   for(size_t i = 0; i < G_MAXUINT8; i++) {
     if (counts[i] > 0)
       counts[i] = 0;
-  }
+  }*/
 }
 
 static void vcpu_exit(qemu_plugin_id_t id, unsigned int cpu_index) {
@@ -363,11 +403,17 @@ static void insn_exec_cb(u32 vcpu_index, void* data) {
   pp("\n");
 }
 
+static void inner_tb_exec(u32 vcpu_index, void* data) {
+  struct TbData* tb_data = (struct TbData*) data;
+  // pf("[TB %08x insn exec] Executing insn %s\n", tb_data->address, tb_data->insn);
+}
+
 static void tb_exec_cb(u32 vcpu_index, void* data) {
   struct TbData* tb_data = (struct TbData*)data;
+  // pf("[TB %08x tb   exec] Executing insn %s\n", tb_data->address, tb_data->insn);
   // pf("tb: exec: vcpu: %zu fs pid: %zu, pid: %zu cur_loc: %zx, prev_loc: %zx, addr: %zx\n", vcpu_index, fs_pid, getpid(), tb_data->cur_location, previous_block, tb_data->cur_location ^ previous_block);
   if (/* fs_pid != getpid() && */ shared_mem) {
-    pf("Executing fuzzed. Current location: %zx, previous block: %zx, incrementing indx: %zx, value: %d\n", tb_data->cur_location, previous_block, (tb_data->cur_location ^ previous_block) % (map_size() / sizeof(BITMAP_ENTRY_TYPE)), shared_mem[(tb_data->cur_location ^ previous_block) % (map_size() / sizeof(BITMAP_ENTRY_TYPE))]);
+    // pf("Executing fuzzed. Current location: %zx, previous block: %zx, incrementing indx: %zx, value: %d\n", tb_data->cur_location, previous_block, (tb_data->cur_location ^ previous_block) % (map_size() / sizeof(BITMAP_ENTRY_TYPE)), shared_mem[(tb_data->cur_location ^ previous_block) % (map_size() / sizeof(BITMAP_ENTRY_TYPE))]);
     shared_mem[(tb_data->cur_location ^ previous_block) % (map_size() / sizeof(BITMAP_ENTRY_TYPE))]++;
   }
   previous_block = tb_data->cur_location >> 1;
@@ -376,23 +422,19 @@ static void tb_exec_cb(u32 vcpu_index, void* data) {
 static void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   size_t nb_insn = qemu_plugin_tb_n_insns(tb);
 
+
   struct TbData* tb_data = malloc(sizeof(struct TbData));
   tb_data->address = qemu_plugin_tb_vaddr(tb);
-  tb_data->cur_location = tb_data->address;
-
-  // print code
-  if (fs_pid != getpid()) {
-    pf("Translating TB: Address: %08x, cur location: %08x nb_insn: %zu\n", tb_data->address, tb_data->cur_location, nb_insn);
-    for(size_t i = 0; i < nb_insn; i++) {
-      struct qemu_plugin_insn* insn = qemu_plugin_tb_get_insn(tb, i);
-      if (insn) {
-        const char* disas = qemu_plugin_insn_disas(insn);
-        pf(">>> %zx %s\n", qemu_plugin_insn_haddr(insn), disas);
-      }
-    }
-  }
-
+  tb_data->cur_location = (unsigned short) qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0));
   qemu_plugin_register_vcpu_tb_exec_cb(tb, tb_exec_cb, QEMU_PLUGIN_CB_NO_REGS, tb_data);
+
+  // struct qemu_plugin_insn* insn = qemu_plugin_tb_get_insn(tb, 0);
+  // if (insn) {
+  //   // pf("[Translating block] Address: %08x\n", tb_data->address);
+  //   tb_data->insn = qemu_plugin_insn_disas(insn);
+  //   qemu_plugin_register_vcpu_insn_exec_cb(insn, inner_tb_exec, QEMU_PLUGIN_CB_NO_REGS, tb_data);
+  // }
+
 
   // size_t address = qemu_plugin_tb_vaddr(tb);
 
@@ -432,11 +474,11 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
   srand(15);
   // fork_server_loop();
   // scoreboard = qemu_plugin_scoreboard_new(sizeof(u8) * sizeof(size_t));
-  // qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
+  qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
   // qemu_plugin_register_vcpu_exit_cb(id, vcpu_exit);
   qemu_plugin_register_vcpu_syscall_cb(id, on_syscall);
   qemu_plugin_register_vcpu_tb_trans_cb(id, vcpu_tb_trans);
-  // qemu_plugin_register_atexit_cb(id, plugin_atexit, NULL);
-  init_fork_server();
+  qemu_plugin_register_atexit_cb(id, plugin_atexit, NULL);
+  // init_fork_server();
   return 0;
 }
