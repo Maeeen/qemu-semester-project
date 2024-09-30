@@ -6,24 +6,6 @@
 long syscall(long number, long arg1, long arg2, long arg3);
 
 void _start() {
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
-    syscall(501, 0, 0, 0);
     char buffer[16];
 
     syscall(1, 1, "Enter your key: ", sizeof("Enter your key: "));
@@ -40,25 +22,6 @@ void _start() {
             *(int*)0x0 = 0x0; // Cause a segmentation fault by dereferencing null
         }
     }
-
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
-    syscall(502, 0, 0, 0);
     // Exit the program with status 0
     syscall(SYS_exit, 0, 0, 0);
 }

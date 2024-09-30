@@ -20,6 +20,8 @@ CFLAGS += -I$(QEMUPATH)/include/qemu
 CFLAGS += $(shell pkg-config --cflags glib-2.0)
 CFLAGS += $(shell pkg-config --cflags capstone)
 
+plugin.so: CFLAGS += -Werror
+
 .SECONDARY:
 .PHONY: all clean
 
@@ -36,7 +38,7 @@ clean:
 	find ./targets -type f -name "*.o" -delete
 
 # Compile plugin
-plugin.so: plugin.o insns.o
+plugin.so: plugin.o afl.o fs.o
 	$(LINK.c) -shared $^ -o $@
 
 targets/coverage:
