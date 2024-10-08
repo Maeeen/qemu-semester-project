@@ -1,0 +1,6 @@
+[submodule "qemu"]
+	path = qemu
+	url = https://github.com/qemu/qemu.git
+[submodule "AFLplusplus"]
+	path = AFLplusplus
+	url = https://github.com/AFLplusplus/AFLplusplus.git
