@@ -41,6 +41,9 @@ clean:
 plugin.so: plugin.o afl.o fs.o
 	$(LINK.c) -shared $^ -o $@
 
+cmplog.so: afl.o fs.o disas.o afl-cmplog.o
+	$(CC) -DCMPLOG='1' $(CFLAGS) plugin.c $^ -c -o $@
+
 targets/coverage:
 	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ targets/coverage.c
 
@@ -63,6 +66,9 @@ targets/%:
 
 run: $(TARGET) plugin.so
 	$(QEMUPATH)/build/qemu-x86_64 -plugin ./plugin.so ./$(TARGET)
+
+run-cmplog: $(TARGET) plugin-cmplog.so
+	$(QEMUPATH)/build/qemu-x86_64 -plugin ./plugin-cmplog.so ./$(TARGET)
 
 run-fs: $(TARGET) $(FS_RUN) plugin.so
 	$(QEMUPATH)/build/qemu-x86_64 -plugin ./plugin.so ./$(FS_RUN)
