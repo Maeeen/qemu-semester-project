@@ -24,6 +24,7 @@
 #define unlikely(x)     (x)
 #endif
 
-#define u32 __uint32_t
-#define u16 __uint16_t
-#define u8 __uint8_t
+typedef __uint32_t u32;
+typedef __uint16_t u16;
+typedef __uint8_t u8;
+typedef __uint64_t u64;

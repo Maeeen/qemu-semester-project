@@ -15,7 +15,7 @@ TARGET_FULLPATH:=$(ROOT_DIR)/$(TARGET)
 
 FS_RUN=targets/fs-c
 
-QEMUPATH=/home/ubuntu/qemu
+QEMUPATH=$(ROOT_DIR)/qemu
 CFLAGS += -I$(QEMUPATH)/include/qemu
 CFLAGS += $(shell pkg-config --cflags glib-2.0)
 CFLAGS += $(shell pkg-config --cflags capstone)
@@ -41,11 +41,15 @@ clean:
 plugin.so: plugin.o afl.o fs.o
 	$(LINK.c) -shared $^ -o $@
 
-cmplog.so: afl.o fs.o disas.o afl-cmplog.o
+cmplog.so: cmplog.o afl.o fs.o afl-cmplog.o disas.o
+	$(LINK.c) -shared $^ -o $@
+cmplog.o: afl.o fs.o disas.o afl-cmplog.o
 	$(CC) -DCMPLOG='1' $(CFLAGS) plugin.c $^ -c -o $@
+cmplog-bootstrapper: cmplog-bootstrapper.c cmplog.so
+	$(CC) -g -O3 -DQEMU='"$(QEMUPATH)/build/qemu-x86_64"' -DQEMU_PLUGIN='"./cmplog.so"' -DTARGET='"$(TARGET_FULLPATH)"' -o $@ cmplog-bootstrapper.c
 
 targets/coverage:
-	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ targets/coverage.c
+	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ targets/coverage.c -fno-stack-protector
 
 targets/dead:
 	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ targets/dead.c
@@ -67,8 +71,8 @@ targets/%:
 run: $(TARGET) plugin.so
 	$(QEMUPATH)/build/qemu-x86_64 -plugin ./plugin.so ./$(TARGET)
 
-run-cmplog: $(TARGET) plugin-cmplog.so
-	$(QEMUPATH)/build/qemu-x86_64 -plugin ./plugin-cmplog.so ./$(TARGET)
+run-cmplog: $(TARGET) cmplog.so
+	$(QEMUPATH)/build/qemu-x86_64 -plugin ./cmplog.so ./$(TARGET)
 
 run-fs: $(TARGET) $(FS_RUN) plugin.so
 	$(QEMUPATH)/build/qemu-x86_64 -plugin ./plugin.so ./$(FS_RUN)

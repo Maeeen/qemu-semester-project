@@ -7,8 +7,6 @@ long syscall(long number, long arg1, long arg2, long arg3);
 
 void _start() {
     char buffer[16];
-
-    syscall(1, 1, "Enter your key: ", sizeof("Enter your key: "));
     
     // Perform the read system call (file descriptor 0 = stdin)
     long bytes_read = syscall(SYS_read, 0, (long)buffer, 15);
