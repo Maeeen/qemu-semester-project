@@ -45,7 +45,7 @@ int fs_handshake() {
   }
 
   // Declare the map size
-  u32 status = FS_NEW_OPT_MAPSIZE;
+  u32 status = FS_NEW_OPT_MAPSIZE | FS_OPT_NEWCMPLOG;
   if (afl_write(status)) {
     pf("Handshake 1: Failed to write set options.\n");
     goto failed_handshake;

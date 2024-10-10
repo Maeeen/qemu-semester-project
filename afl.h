@@ -27,6 +27,7 @@
 #define FS_NEW_OPT_MAPSIZE 0x00000001      // parameter: 32 bit value
 #define FS_NEW_OPT_SHDMEM_FUZZ 0x00000002  // parameter: none
 #define FS_NEW_OPT_AUTODICT 0x00000800     // autodictionary data
+#define FS_OPT_NEWCMPLOG 0x02000000
 
 /// FS handshake
 #define FS_VERSION (0x41464c00) // "AFL<nul>"
