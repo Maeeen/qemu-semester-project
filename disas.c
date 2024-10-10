@@ -64,14 +64,14 @@ struct disas_insn_operands get_operands(void* iaddr, size_t isz) {
     }
 
     op.should_instrument = true;
-    pf("disas %s\n", insn.mnemonic);
+    // pf("disas %s\n", insn.mnemonic);
 
     for(size_t i = 0; i < 8; i++) {
         if (insn.detail->x86.operands[i].type == X86_OP_REG) {
             struct disas_op_source src = { 0 };
             src.tpe = REGISTER;
             src.size = insn.detail->x86.operands[i].size * 8;
-            pf("Register: %s\n", cs_reg_name(handle, insn.detail->x86.operands[i].reg));
+            // pf("Register: %s\n", cs_reg_name(handle, insn.detail->x86.operands[i].reg));
             src.reg.idx = get_register_idx(cs_reg_name(handle, insn.detail->x86.operands[i].reg));
             strncpy(src.reg.name, cs_reg_name(handle, insn.detail->x86.operands[i].reg), 16);
             add_operand(&op, &src);
@@ -81,13 +81,13 @@ struct disas_insn_operands get_operands(void* iaddr, size_t isz) {
             src.size = insn.detail->x86.operands[i].size * 8;
             src.c.value = insn.detail->x86.operands[i].imm;
             add_operand(&op, &src);
-            pf("Immediate: %lu\n", insn.detail->x86.operands[i].imm);
+            // pf("Immediate: %lu\n", insn.detail->x86.operands[i].imm);
         } else if (insn.detail->x86.operands[i].type == X86_OP_MEM) {
             struct disas_op_source src = { 0 };
             src.tpe = MEMORY;
             src.size = insn.detail->x86.operands[i].size * 8;
             add_operand(&op, &src);
-            pf("Memory\n");
+            // pf("Memory\n");
         }
     }
     return op;

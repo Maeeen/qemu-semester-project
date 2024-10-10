@@ -36,6 +36,7 @@ clean:
 	find ./targets -type f ! -name "*.*" -delete
 	# Delete all object files
 	find ./targets -type f -name "*.o" -delete
+	rm cmplog-bootstrapper
 
 # Compile plugin
 plugin.so: plugin.o afl.o fs.o
@@ -46,7 +47,7 @@ cmplog.so: cmplog.o afl.o fs.o afl-cmplog.o disas.o
 cmplog.o: afl.o fs.o disas.o afl-cmplog.o
 	$(CC) -DCMPLOG='1' $(CFLAGS) plugin.c $^ -c -o $@
 cmplog-bootstrapper: cmplog-bootstrapper.c cmplog.so
-	$(CC) -g -O3 -DQEMU='"$(QEMUPATH)/build/qemu-x86_64"' -DQEMU_PLUGIN='"./cmplog.so"' -DTARGET='"$(TARGET_FULLPATH)"' -o $@ cmplog-bootstrapper.c
+	$(CC) -g -O3 -DQEMU='"$(QEMUPATH)/build/qemu-x86_64"' -DQEMU_PLUGIN='"$(ROOT_DIR)/cmplog.so"' -DTARGET='"$(TARGET_FULLPATH)"' -o $@ cmplog-bootstrapper.c
 
 targets/coverage:
 	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ targets/coverage.c -fno-stack-protector

@@ -19,7 +19,7 @@ int cmplog_init() {
 }
 
 void cmplog_log(size_t location_, u64 v0, u64 v1, u64 effective_bits) {
-  pf("Tried to compare %zu with %zu bits %zu at %lu\n", v0, v1, effective_bits, location_);
+  // pf("Tried to compare %zu with %zu bits %zu at %lu\n", v0, v1, effective_bits, location_);
   unsigned short location = (unsigned short) location_;
   if (likely(compare_map)) {
     u32 hits = 0;
@@ -52,7 +52,7 @@ void cmplog_log(size_t location_, u64 v0, u64 v1, u64 effective_bits) {
 }
 
 int cmplog_shmem(void** mem, size_t* size) {
-  if (unlikely(!afl_is_here())) {
+  if (unlikely(!afl_is_here()) || !getenv(CMPLOG_ENV)) {
     pf("AFL is not detected. Using a dummy shared for complog map.\n");
     *size = sizeof(struct cmp_map);
     *mem = malloc(*size);
@@ -76,7 +76,7 @@ int cmplog_shmem(void** mem, size_t* size) {
   shmctl(shm_id, IPC_STAT, &buf);
   *size = buf.shm_segsz;
 
-  if (*size != sizeof(struct cmp_map)) {
+  if (*size < sizeof(struct cmp_map)) {
     pf("Invalid shared memory size. AFL gave us %zu but we need %zu.\n", size, sizeof(struct cmp_map));
     return -1;
   }

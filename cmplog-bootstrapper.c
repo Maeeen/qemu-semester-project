@@ -12,5 +12,5 @@
 #endif
 
 int main(void) {
-    execve(QEMU, (char *[]) {QEMU, "-plugin", QEMU_PLUGIN, TARGET, NULL}, (char *[]) {NULL});
+    execv(QEMU, (char *[]) {QEMU, "-plugin", QEMU_PLUGIN, TARGET, NULL});
 }

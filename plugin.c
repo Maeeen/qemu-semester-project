@@ -21,6 +21,11 @@ void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
         qemu_plugin_reg_descriptor* reg = &g_array_index(reg_list, qemu_plugin_reg_descriptor, i);
         disas_declare_reg(reg->name, i);
       }
+
+      if (unlikely(cmplog_init())) {
+        pf("Error initializing cmplog.\n");
+        exit(-1);
+      }
     #endif
 
     is_forked = 1;
@@ -59,14 +64,14 @@ void completed_cmp_exec(struct cmplog_cb_data* cb_data) {
   } else if (cb_data->ops.reg0.tpe == REGISTER) {
     // read register
     if (unlikely(cb_data->ops.reg0.reg.idx >= arr->len)) {
-      pf("Error: invalid register index.\n");
+      // pf("Error: invalid register index.\n");
       return;
     }
     qemu_plugin_reg_descriptor* reg0 = &g_array_index(arr, qemu_plugin_reg_descriptor, cb_data->ops.reg0.reg.idx);
     GByteArray* a = g_byte_array_new();
     size_t s = qemu_plugin_read_register(reg0->handle, a);
     if (s != a->len) {
-      pf("Error reading register.\n");
+      // pf("Error reading register.\n");
       return;
     }
 
@@ -83,7 +88,7 @@ void completed_cmp_exec(struct cmplog_cb_data* cb_data) {
     v1 = cb_data->ops.reg1.c.value;
   } else if (cb_data->ops.reg1.tpe == REGISTER) {
     if (unlikely(cb_data->ops.reg1.reg.idx >= arr->len)) {
-      pf("Error: invalid register index.\n");
+      // pf("Error: invalid register index.\n");
       return;
     }
     // read register
@@ -91,7 +96,7 @@ void completed_cmp_exec(struct cmplog_cb_data* cb_data) {
     GByteArray* a = g_byte_array_new();
     size_t s = qemu_plugin_read_register(reg1->handle, a);
     if (s != a->len) {
-      pf("Error reading register.\n");
+      // pf("Error reading register.\n");
       return;
     }
 
@@ -110,11 +115,11 @@ void completed_cmp_exec(struct cmplog_cb_data* cb_data) {
 void insn_mem(unsigned int vcpu_index, qemu_plugin_meminfo_t info, uint64_t vaddr, void *userdata) {
   struct cmplog_cb_data* cb_data = (struct cmplog_cb_data*) userdata;
   if (unlikely(!cb_data)) {
-    pf("Error: no data in insn_mem.\n");
+    // pf("Error: no data in insn_mem.\n");
     return;
   }
   if (cb_data->ops.mem_accesses == 0) {
-    pf("Error: unexpected memory access.\n");
+    // pf("Error: unexpected memory access.\n");
     return;
   }
   // Identifying which memory access we are doing
@@ -127,7 +132,7 @@ void insn_mem(unsigned int vcpu_index, qemu_plugin_meminfo_t info, uint64_t vadd
   } else if (cb_data->ops.reg1.tpe == MEMORY && cb_data->mem_accesses == 0 && cb_data->ops.reg0.tpe != MEMORY) {
     where_to_write = &cb_data->v1_mem;
   } else {
-    pf("Error: invalid memory access done=mem_accesses=%x, insn=mem_accesses=%x.\n", cb_data->mem_accesses, cb_data->ops.mem_accesses);
+    // pf("Error: invalid memory access done=mem_accesses=%x, insn=mem_accesses=%x.\n", cb_data->mem_accesses, cb_data->ops.mem_accesses);
     return;
   }
 
@@ -147,7 +152,7 @@ void insn_mem(unsigned int vcpu_index, qemu_plugin_meminfo_t info, uint64_t vadd
       *where_to_write = v.data.u64;
       break;
     default:
-      pf("Error: unexpected memory access size.\n");
+      // pf("Error: unexpected memory access size.\n");
       return;
   }
 
@@ -165,7 +170,7 @@ void insn_mem(unsigned int vcpu_index, qemu_plugin_meminfo_t info, uint64_t vadd
 // This gets executed if an instruction does not require memory accesses to be executed.
 void insn_exec(unsigned int vcpu_index, void* data) {
   struct cmplog_cb_data* cb_data = (struct cmplog_cb_data*) data;
-  pf("Running insn_exec %s\n", cb_data->ops.mnemonic);
+  // pf("Running insn_exec %s\n", cb_data->ops.mnemonic);
   if (unlikely(!cb_data)) {
     pf("Error: no data in insn_exec.\n");
     return;
@@ -194,7 +199,7 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
 
     struct disas_insn_operands ops = get_operands(data, data_sz);
     if (ops.should_instrument) {
-      pf("Instrumenting %s\n", ops.mnemonic);
+      // pf("Instrumenting %s\n", ops.mnemonic);
       struct cmplog_cb_data *cb_data = calloc(1, sizeof(struct cmplog_cb_data));
       cb_data->ops = ops;
       if (ops.mem_accesses) {
