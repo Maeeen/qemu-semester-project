@@ -80,9 +80,11 @@ plugin path and target path to QEMU.
 
 ### Building arguments/targets
 
+Variables:
 - `DEBUG=0`: disable debug messages
 - `TARGET_BIN=<target>`: specify the target binary in `targets/`
 
+Targets:
 - `cmplog.so`: build the `cmplog` plugin
 - `cmplog-bootstrapper`: build the bootstrapper for `cmplog`
 - `plugin.so`: build the main plugin
