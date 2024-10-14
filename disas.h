@@ -50,3 +50,7 @@ int disas_init(const char* arch);
 void disas_declare_reg(const char* name, u64 idx);
 // Returns operands
 struct disas_insn_operands get_operands(void* iaddr, size_t isz);
+/// Returns 0 if successfuly handled one pending instructions. 1 otherwise.
+int disas_handle_pending_one();
+/// Handles all pending instructions
+void disas_handle_pending();

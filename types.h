@@ -9,7 +9,11 @@
 #define DEBUG
 
 #ifdef DEBUG
-#define pf(fmt, ...) fprintf(stderr, "[Plugin] " fmt, ##__VA_ARGS__)
+#ifdef CMPLOG
+#define pf(fmt, ...) fprintf(stderr, "[Plugin cmplog %zu] " fmt, getpid(), ##__VA_ARGS__)
+#else
+#define pf(fmt, ...) fprintf(stderr, "[Plugin %zu] " fmt, getpid(), ##__VA_ARGS__)
+#endif
 #define pp(fmt, ...) fprintf(stderr, fmt, ##__VA_ARGS__)
 #else
 #define pf(fmt, ...)

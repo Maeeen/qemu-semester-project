@@ -86,3 +86,6 @@ debug: $(TARGET) plugin.so
 
 debug-fs: $(TARGET) $(FS_RUN) plugin.so
 	$(DBG) --args $(QEMUPATH)/build/qemu-x86_64 -plugin ./plugin.so ./$(FS_RUN)
+
+dbg-cmplog: $(TARGET) cmplog.so
+	$(DBG) --args $(QEMUPATH)/build/qemu-x86_64 -plugin ./cmplog.so ./$(TARGET)

@@ -6,11 +6,17 @@
 #include <glib.h>
 #include "afl-cmplog.h"
 #include "disas.h"
+
+extern int disas_hit;
+extern int disas_miss;
+extern int hash_size;
 #endif
 
 static bool is_forked = 0;
 void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
   if (!is_forked) {
+    is_forked = 1;
+
     #ifdef CMPLOG
       g_autoptr(GArray) reg_list = qemu_plugin_get_registers();
       if (reg_list == NULL) {
@@ -28,7 +34,6 @@ void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
       }
     #endif
 
-    is_forked = 1;
     if (unlikely(fs_init())) {
       pf("Error initializing the fork server.");
       exit(-1);
@@ -38,7 +43,34 @@ void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
         pf("Error handshake.");
         exit(-1);
       }
-      fs_loop();
+    }
+
+    if (likely(afl_is_here())) {
+      while(1) {
+        #ifdef CMPLOG
+        if (fs_loop(disas_handle_pending)) {
+          break;
+        }
+        #else
+        if (fs_loop(NULL)) {
+          break;
+        }
+        #endif
+
+      }
+    } else {
+      while(1) {
+        #include <sys/types.h>
+        #include <sys/wait.h>
+        #ifdef CMPLOG
+        disas_handle_pending();
+        #endif
+        pf("Press a key to launch a new instance.\n");
+        getchar();
+        if (fork() == 0) break;
+        waitpid(-1, NULL, 0);
+        pf("New instance finished.\n");
+      }
     }
   }
 }
@@ -199,7 +231,6 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
 
     struct disas_insn_operands ops = get_operands(data, data_sz);
     if (ops.should_instrument) {
-      // pf("Instrumenting %s\n", ops.mnemonic);
       struct cmplog_cb_data *cb_data = calloc(1, sizeof(struct cmplog_cb_data));
       cb_data->ops = ops;
       if (ops.mem_accesses) {
@@ -214,6 +245,12 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
+void at_exit(qemu_plugin_id_t id, void *userdata) {
+  #ifdef CMPLOG
+  pf("Hits: %d, Misses: %d, size %d\n", disas_hit, disas_miss, hash_size);
+  #endif
+}
+
 QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info, int argc, char **argv) {
   #ifdef CMPLOG
   if (disas_init(info->target_name)) {
@@ -223,5 +260,6 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
   #endif
   qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
   qemu_plugin_register_vcpu_tb_trans_cb(id, vcpu_tb_trans);
+  qemu_plugin_register_atexit_cb(id, at_exit, NULL);
   return 0;
 }

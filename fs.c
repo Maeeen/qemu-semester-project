@@ -68,39 +68,37 @@ failed_handshake:
   return -1;
 }
 
-void fs_loop() {
-  while(1) {
-    u32 dummy;
-    if (afl_read(&dummy)) {
-      pf("Failed to read start message.\n");
-      goto failed_comm;
-    }
-    pid_t child = fork();
-    if (child == 0) {
-      close(FORKSRV_FD_IN);
-      close(FORKSRV_FD_OUT);
-      break;
-    }
-    if (child < 0) {
-      perror("fork");
-      pf("fork failed.");
-      exit(-1);
-    }
-    pf("Sending child pid.\n");
-    afl_write(child);
-    int status;
-    if (waitpid(child, &status, 0) < 0) {
-      perror("waitpid");
-      pf("waitpid failed.");
-      exit(-1);
-    }
-    if (afl_write(status)) {
-      pf("Failed to send status.\n");
-      goto failed_comm;
-    }
+int fs_loop(void(*possible_inter)()) {
+  u32 dummy;
+  if (afl_read(&dummy)) {
+    pf("Failed to read start message.\n");
+    goto failed_comm;
+  }
+  pid_t child = fork();
+  if (child == 0) {
+    close(FORKSRV_FD_IN);
+    close(FORKSRV_FD_OUT);
+    return 1;
+  }
+  if (child < 0) {
+    perror("fork");
+    pf("fork failed.");
+    exit(-1);
+  }
+  afl_write(child);
+  if (possible_inter) possible_inter();
+  int status;
+  if (waitpid(child, &status, 0) < 0) {
+    perror("waitpid");
+    pf("waitpid failed.");
+    exit(-1);
+  }
+  if (afl_write(status)) {
+    pf("Failed to send status.\n");
+    goto failed_comm;
   }
 
-  return;
+  return 0;
 
 failed_comm:
   pf("Failed communication with AFL. Goodbye! :(\n");
