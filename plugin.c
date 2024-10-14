@@ -241,11 +241,6 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
-void at_exit(qemu_plugin_id_t id, void *userdata) {
-  #ifdef CMPLOG
-  pf("Hits: %d, Misses: %d, size %d, dummy %d\n", disas_hit, disas_miss, hash_size, dummy);
-  #endif
-}
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info, int argc, char **argv) {
   #ifdef CMPLOG
@@ -256,6 +251,5 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
   #endif
   qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
   qemu_plugin_register_vcpu_tb_trans_cb(id, vcpu_tb_trans);
-  qemu_plugin_register_atexit_cb(id, at_exit, NULL);
   return 0;
 }
