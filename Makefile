@@ -3,9 +3,15 @@ CC=cc
 ASM=nasm
 LD=ld
 
-CFLAGS= -Wall -g -O -fPIC
+CFLAGS= -Wall -g -O3 -fPIC
 RM=rm -f
 DBG=gdb
+
+DEBUG ?= 1
+
+ifeq ($(DEBUG), 1)
+    CFLAGS += -DDEBUG='1'
+endif
 
 ROOT_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 
@@ -40,7 +46,7 @@ clean:
 
 # Compile plugin
 plugin.so: plugin.o afl.o fs.o
-	$(LINK.c) -shared $^ -o $@
+	$(LINK.c) $(CFLAGS) -shared $^ -o $@
 
 cmplog.so: cmplog.o afl.o fs.o afl-cmplog.o disas.o
 	$(LINK.c) -shared $^ -o $@

@@ -6,13 +6,11 @@
 #include <errno.h>
 #include <unistd.h>
 
-#define DEBUG
-
 #ifdef DEBUG
 #ifdef CMPLOG
-#define pf(fmt, ...) fprintf(stderr, "[Plugin cmplog %zu] " fmt, getpid(), ##__VA_ARGS__)
+#define pf(fmt, ...) fprintf(stderr, "[Plugin cmplog] " fmt, ##__VA_ARGS__)
 #else
-#define pf(fmt, ...) fprintf(stderr, "[Plugin %zu] " fmt, getpid(), ##__VA_ARGS__)
+#define pf(fmt, ...) fprintf(stderr, "[Plugin] " fmt, ##__VA_ARGS__)
 #endif
 #define pp(fmt, ...) fprintf(stderr, fmt, ##__VA_ARGS__)
 #else

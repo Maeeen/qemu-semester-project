@@ -5,10 +5,6 @@
 
 int fd[2] = { 0 };
 
-int disas_hit = 0;
-int disas_miss = 0;
-int hash_size = 0;
-
 #define MAX_LENGTH_INSTRUCTION 16
 
 void print_array(uint8_t* array, size_t size) {
@@ -76,14 +72,11 @@ void add_operand(struct disas_insn_operands* op, struct disas_op_source* src) {
 }
 
 struct disas_insn_operands get_operands(void* iaddr, size_t isz) {
-  // hash_size = g_hash_table_size(disas_map);
   char insn_padded[MAX_LENGTH_INSTRUCTION] = { 0 };
   memcpy(insn_padded, iaddr, isz); // TODO: isz should be less than 16
   if (disas_map && g_hash_table_contains(disas_map, g_memdup(insn_padded, MAX_LENGTH_INSTRUCTION))) {
-    disas_hit++;
     return *(struct disas_insn_operands*) g_hash_table_lookup(disas_map, insn_padded);
   }
-  disas_miss++;
 
   cs_insn* insns;
   size_t count = cs_disasm(handle, (const uint8_t*) iaddr, isz, 0x1000, 0, &insns);

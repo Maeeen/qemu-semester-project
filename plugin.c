@@ -6,10 +6,6 @@
 #include <glib.h>
 #include "afl-cmplog.h"
 #include "disas.h"
-
-extern int disas_hit;
-extern int disas_miss;
-extern int hash_size;
 #endif
 
 static bool is_forked = 0;
@@ -247,7 +243,7 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
 void at_exit(qemu_plugin_id_t id, void *userdata) {
   #ifdef CMPLOG
-  pf("Hits: %d, Misses: %d, size %d\n", disas_hit, disas_miss, hash_size);
+  pf("Hits: %d, Misses: %d, size %d, dummy %d\n", disas_hit, disas_miss, hash_size, dummy);
   #endif
 }
 
