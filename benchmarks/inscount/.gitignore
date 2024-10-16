@@ -1,0 +1,7 @@
+
+qemu
+
+__pycache__
+/*.o
+/*.so
+/*.out

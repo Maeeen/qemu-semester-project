@@ -1,0 +1,54 @@
+diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
+index 8163295f34..c86e5f883a 100644
+--- a/accel/tcg/cpu-exec.c
++++ b/accel/tcg/cpu-exec.c
+@@ -50,6 +50,8 @@ typedef struct SyncClocks {
+     int64_t realtime_clock;
+ } SyncClocks;
+ 
++size_t instruction_count = 0;
++
+ #if !defined(CONFIG_USER_ONLY)
+ /* Allow the guest to have a max 3ms advance.
+  * The difference between the 2 clocks could therefore
+@@ -454,6 +456,7 @@ cpu_tb_exec(CPUState *cpu, TranslationBlock *itb, int *tb_exit)
+         log_cpu_exec(log_pc(cpu, itb), cpu, itb);
+     }
+ 
++    instruction_count += itb->icount;
+     qemu_thread_jit_execute();
+     ret = tcg_qemu_tb_exec(cpu_env(cpu), tb_ptr);
+     cpu->neg.can_do_io = true;
+diff --git a/linux-user/i386/cpu_loop.c b/linux-user/i386/cpu_loop.c
+index 92beb6830c..fc68eef1e1 100644
+--- a/linux-user/i386/cpu_loop.c
++++ b/linux-user/i386/cpu_loop.c
+@@ -25,6 +25,8 @@
+ #include "signal-common.h"
+ #include "user-mmap.h"
+ 
++extern size_t instruction_count;
++
+ /***********************************************************/
+ /* CPUX86 core interface */
+ 
+@@ -221,6 +223,9 @@ void cpu_loop(CPUX86State *env)
+         case EXCP_SYSCALL:
+ #endif
+             /* linux syscall from int $0x80 */
++            if (env->regs[R_EAX] == 0x3c) {
++                printf("Instruction count: %lu\n", instruction_count);
++            }
+             ret = do_syscall(env,
+                              env->regs[R_EAX],
+                              env->regs[R_EBX],
+@@ -238,6 +243,9 @@ void cpu_loop(CPUX86State *env)
+             break;
+ #ifdef TARGET_X86_64
+         case EXCP_SYSCALL:
++            if (env->regs[R_EAX] == 0x3c) {
++                printf("Instruction count: %lu\n", instruction_count);
++            }
+             /* linux syscall from syscall instruction.  */
+             ret = do_syscall(env,
+                              env->regs[R_EAX],
