@@ -1,4 +1,4 @@
-from utils import exec
+from utils import exec_cmd
 
 def indent(s):
     return " " * 4 + s.replace('\n', '\n' + " " * 4)
@@ -22,7 +22,7 @@ syscall
     with open(out + '.asm', 'w') as f:
         f.write(code)
     # assemble
-    exec('nasm', ['-f', 'elf64', out + '.asm', '-o', out + '.o'])
+    exec_cmd('nasm', ['-f', 'elf64', out + '.asm', '-o', out + '.o'])
     # link
-    exec('ld', ['-o', out + '.out', out + '.o'])
+    exec_cmd('ld', ['-o', out + '.out', out + '.o'])
     return out + '.out'
