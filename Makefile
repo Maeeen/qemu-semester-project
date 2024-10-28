@@ -7,7 +7,7 @@ CFLAGS= -Wall -g -O3 -fPIC
 RM=rm -f
 DBG=gdb
 
-DEBUG ?= 1
+DEBUG ?= 0
 
 ifeq ($(DEBUG), 1)
     CFLAGS += -DDEBUG='1'
@@ -42,7 +42,7 @@ clean:
 	find ./targets -type f ! -name "*.*" -delete
 	# Delete all object files
 	find ./targets -type f -name "*.o" -delete
-	rm cmplog-bootstrapper
+	rm cmplog-bootstrapper || true
 
 # Compile plugin
 plugin.so: plugin.o afl.o fs.o
@@ -57,6 +57,9 @@ cmplog-bootstrapper: cmplog-bootstrapper.c cmplog.so
 
 targets/coverage:
 	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ targets/coverage.c -fno-stack-protector
+
+targets/coverage-long:
+	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -g -nostdlib -o $@ targets/coverage-long.c -fno-stack-protector
 
 targets/dead:
 	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ targets/dead.c
