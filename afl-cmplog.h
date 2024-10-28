@@ -19,14 +19,17 @@
 #define CMP_TYPE_INS 0
 #define CMP_TYPE_RTN 1
 
+// TODO: ideally include AFLplusplus
 struct cmp_operands {
   u64 v0;
-  u64 v1;
   u64 v0_128;
+  u64 v0_256_0;  // u256 is unsupported by any compiler for now, so future use
+  u64 v0_256_1;
+  u64 v1;
   u64 v1_128;
-  u64 unused;
-  u8  unused1;
-  u8  unused2;
+  u64 v1_256_0;
+  u64 v1_256_1;
+  u8  unused[8];
 } __attribute__((packed));
 
 struct cmp_header {  // 16 bit = 2 bytes

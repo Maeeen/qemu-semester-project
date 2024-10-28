@@ -19,8 +19,8 @@ int cmplog_init() {
 }
 
 void cmplog_log(size_t location_, u64 v0, u64 v1, u64 effective_bits) {
-  // pf("Tried to compare %zu with %zu bits %zu at %lu\n", v0, v1, effective_bits, location_);
   unsigned short location = (unsigned short) location_;
+  // printf("Tried to compare %llx with %llx bits %zu at %lu (%hu)\n", v0, v1, effective_bits, location_, location);
   if (likely(compare_map)) {
     u32 hits = 0;
     if (compare_map->headers[location].type != CMP_TYPE_INS)
