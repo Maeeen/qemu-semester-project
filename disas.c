@@ -81,10 +81,14 @@ struct disas_insn_operands get_operands(void* iaddr, size_t isz) {
   cs_insn* insns;
   size_t count = cs_disasm(handle, (const uint8_t*) iaddr, isz, 0x1000, 0, &insns);
   struct disas_insn_operands op = { 0 };
+  
+  uint8_t buffer[sizeof(size_t) + isz];
+  memcpy(buffer, &isz, sizeof(size_t));
+  memcpy(buffer + sizeof(size_t), iaddr, isz);
 
-  // Signal to parent that we have disassembled this instruction
-  write(fd[1], &isz, sizeof(size_t));
-  write(fd[1], iaddr, isz);
+  if (write(fd[1], buffer, sizeof(buffer)) != sizeof(buffer)) {
+    // pf("Error writing to disassembly pipe.\n");
+  }
 
   // Let's actually query which register it read
   if (count <= 0) {
@@ -179,7 +183,7 @@ void disas_handle_pending() {
 int disas_handle_pending_one() {
   // read from fd and disassemble
   size_t isz = 0;
-  if (read(fd[0], &isz, sizeof(size_t))== -1) {
+  if (read(fd[0], &isz, sizeof(size_t)) == -1) {
     if (errno == EAGAIN) {
       return 1;
     }
