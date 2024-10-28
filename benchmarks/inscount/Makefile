@@ -15,6 +15,9 @@ CFLAGS += $(shell pkg-config --cflags glib-2.0)
 inscount.so: inscount.o
 	$(LINK.c) $(CFLAGS) -shared $^ -o $@
 
+tblog.so: tblog.o
+	$(LINK.c) $(CFLAGS) -shared $^ -o $@
+
 run: inscount.so
 	$(QEMUPATH)/build/qemu-x86_64 -plugin ./inscount.so ./$(BIN)
 
@@ -24,3 +27,5 @@ dbg: inscount.so
 clean:
 	rm -f inscount.so
 	rm -f inscount.o
+	rm -f tblog.o
+	rm -f tblog.so
