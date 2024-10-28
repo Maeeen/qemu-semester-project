@@ -37,7 +37,6 @@ struct disas_insn_operands {
   char mnemonic[16];
   char mem_accesses; // number of memory accesses required for that instruction
   char should_instrument; // is 1 if the instruction is a cmp or test
-  size_t location;
   size_t nb_effective; // number of effective bits compared
   struct disas_op_source reg0;
   struct disas_op_source reg1;

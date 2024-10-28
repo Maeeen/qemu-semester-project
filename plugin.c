@@ -136,7 +136,7 @@ void completed_cmp_exec(struct cmplog_cb_data* cb_data) {
   } else if (cb_data->ops.reg1.tpe == MEMORY) {
     v1 = cb_data->v1_mem;
   }
-  cmplog_log(cb_data->ops.location, v0, v1, cb_data->ops.nb_effective);
+  cmplog_log(cb_data->location, v0, v1, cb_data->ops.nb_effective);
 }
 
 // This gets executed if an instruction requires memory accesses to be executed.
@@ -237,6 +237,7 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
     struct disas_insn_operands ops = get_operands(data, data_sz);
     if (ops.should_instrument) {
       struct cmplog_cb_data *cb_data = calloc(1, sizeof(struct cmplog_cb_data));
+      cb_data->location = qemu_plugin_insn_vaddr(insn);
       cb_data->ops = ops;
       if (ops.mem_accesses) {
         qemu_plugin_register_vcpu_mem_cb(insn, insn_mem, QEMU_PLUGIN_CB_R_REGS, QEMU_PLUGIN_MEM_R, (void*) cb_data);

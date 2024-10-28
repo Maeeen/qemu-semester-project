@@ -58,6 +58,7 @@ int cmplog_shmem(void** mem, size_t* size);
 struct cmplog_cb_data {
   struct disas_insn_operands ops;
   char mem_accesses; // the mem accesses that have been done
+  u64 location;
   u64 v0_mem;
   u64 v1_mem;
 };
