@@ -7,9 +7,6 @@ long syscall(long number, long arg1, long arg2, long arg3);
 
 void _start() {
     char buffer[20];
-    for(int i = 0; i < 20; i++) { // -O3 makes this crash!!!
-        buffer[i] = 0;
-    }
     // Perform the read system call (file descriptor 0 = stdin)
     long bytes_read = syscall(SYS_read, 0, (long)buffer, 19);
 

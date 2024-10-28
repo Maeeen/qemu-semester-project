@@ -207,7 +207,16 @@ void insn_exec(unsigned int vcpu_index, void* data) {
 }
 #endif
 
+int has_started = 0;
+
 void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
+  if (has_started == 0) {
+    if (qemu_plugin_start_code() == qemu_plugin_tb_vaddr(tb)) {
+      has_started = 1;
+    } else {
+      return;
+    }
+  }
   if (unlikely(qemu_plugin_tb_n_insns(tb) == 0)) return;
   // if the void* pointer is not enough to store the hardware address
   // give up.
