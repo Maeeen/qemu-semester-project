@@ -7,6 +7,7 @@
 
 struct cmp_map *compare_map = NULL;
 
+/// Initializes the cmplog shared memory.
 int cmplog_init() {
   if (unlikely(!afl_is_here()) || !getenv(CMPLOG_ENV)) {
     pf("AFL is not detected. Continuing without.\n");
@@ -18,6 +19,7 @@ int cmplog_init() {
   }
 }
 
+/// Logs a comparison.
 void cmplog_log(size_t location_, u64 v0, u64 v1, u64 effective_bits) {
   unsigned short location = (unsigned short) location_;
   // printf("Tried to compare %llx with %llx bits %zu at %lu (%hu)\n", v0, v1, effective_bits, location_, location);
@@ -51,6 +53,7 @@ void cmplog_log(size_t location_, u64 v0, u64 v1, u64 effective_bits) {
   }
 }
 
+/// Initializes the shared memory for cmplog.
 int cmplog_shmem(void** mem, size_t* size) {
   if (unlikely(!afl_is_here()) || !getenv(CMPLOG_ENV)) {
     pf("AFL is not detected. Using a dummy shared for complog map.\n");

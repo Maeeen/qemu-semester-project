@@ -1,5 +1,11 @@
 # Implementing coverage on QEMU with plugins
 
+The goal of this project is to implement what can QEMU do with plugins. The
+goal is to implement coverage and `cmplog` features for AFL++.
+
+This project bundles simple targets for testing the plugins that are under
+the `targets/` directory.
+
 For convenience, AFLplusplus and QEMU are submodules. If not used as submodules,
 the initialization of submodules can be ignored.
 
@@ -36,18 +42,17 @@ executed and send the coverage information to AFL.
 ### `cmplog`
 
 This is a bit more complicated. The plugin will disassemble the basic block and
-check what registers, memory and constants are used as operands. On memory access 
-or execution, the plugin will log the operands and the result of the operation.
+check what registers, memory and constants are used as operands for each
+instruction. On memory access or execution, the plugin will log the operands, 
+the result of the operation and forward the information to AFL.
 
-For speed, the plugin will also cache disassemblies of instructions.
-
-Currently, the link with AFL has not been tested, but the plugin is able to
-log the operands and the result of the operation.
+For speed, the plugin will also cache disassemblies of instructions between
+the fork server and the forked childs.
 
 `cmplog.so` is built with the `plugin.c` file with the `CMPLOG` preprocessor 
 variable defined.
 
-## Building
+## Building and use
 
 Requirements:
 - `clang` or `gcc`
@@ -59,7 +64,58 @@ Requirements:
 
 Most of those are requirements from QEMU itself.
 
-Once built, the plugin can be loaded with the `-plugin` option of QEMU. With AFL++:
+### Clone
+
+```
+git clone --recurse-submodules -j8 git@github.com:Maeeen/qemu-semester-project.git --depth 1
+```
+
+### Build AFL-fuzz
+
+```
+cd ./AFLplusplus
+make distrib
+```
+
+### Build QEMU
+
+```
+cd qemu
+mkdir build
+../configure --target-list=x86_64-linux-user
+make -j32
+```
+
+### Run with coverage only
+
+```
+mkdir test && cd $_
+mkdir afl-in afl-out
+echo prout > ./afl-in/seed
+make -C ../ clean
+make -C ../ plugin.so
+make -C ../ targets/coverage # example target that cheks for "fuzz"
+AFL_SKIP_BIN_CHECK=1 ../AFLplusplus/afl-fuzz -i ./afl-in -o ./afl-out -- ../qemu/build/qemu-x86_64 -plugin ../plugin.so ../targets/coverage
+```
+
+### Run with cmplog
+
+```
+mkdir test && cd $_
+mkdir afl-in afl-out
+echo prout > ./afl-in/seed
+make -C ../ clean
+make -C ../ plugin.so
+make -C ../ TARGET_BIN=coverage-long cmplog.so cmplog-bootstrapper plugin.so targets/coverage-long
+AFL_SKIP_BIN_CHECK=1 ../AFLplusplus/afl-fuzz -i ./afl-in -o ./afl-out -c ./cmplog-bootstrapper -- ../qemu/build/qemu-x86_64 -plugin ../plugin.so ../targets/coverage-long
+```
+
+The `cmplog` feature is very powerful, with observed little slowdowns compared to
+the coverage-only plugin. The above example should find the magic input in mere seconds.
+
+### Details
+
+Once built, the plugin can be loaded with the `-plugin` option of QEMU for coverage. With AFL++:
 
 ```
 make plugin.so

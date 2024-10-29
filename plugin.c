@@ -8,12 +8,16 @@
 #include "disas.h"
 #endif
 
+/// To fork only once.
 static bool is_forked = 0;
+
+/// On vCPU init, fork.
 void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
   if (!is_forked) {
     is_forked = 1;
 
     #ifdef CMPLOG
+      // declare available registers for cmplog, to be able to find them back easily.
       g_autoptr(GArray) reg_list = qemu_plugin_get_registers();
       if (reg_list == NULL) {
         pf("Error getting register list.\n");
@@ -44,6 +48,7 @@ void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
     if (likely(afl_is_here())) {
       while(1) {
         #ifdef CMPLOG
+        // between very iteration, disassemble the pending instructions
         if (fs_loop(disas_handle_pending)) {
           break;
         }
@@ -55,6 +60,7 @@ void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
 
       }
     } else {
+      // Mainly for debugging.
       while(1) {
         #include <sys/types.h>
         #include <sys/wait.h>
@@ -71,6 +77,7 @@ void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
   }
 }
 
+/// Register the execution of a new address.
 void tb_exec(uint32_t vcpu_index, void* data) {
   fs_register_exec((size_t) data);
 }

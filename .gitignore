@@ -6,6 +6,8 @@ targets/loop-asm
 targets/loop-asm.o
 targets/coverage.o
 targets/coverage
-insns.o
-plugin.o
-plugin.so
+targets/coverage-long
+*.o
+*.so
+cmplog-bootstrapper
+test/**

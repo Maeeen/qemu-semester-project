@@ -58,10 +58,11 @@ int cmplog_init();
 void cmplog_log(size_t location, u64 v0, u64 v1, u64 effective_bits);
 int cmplog_shmem(void** mem, size_t* size);
 
+/// Data used by the callback
 struct cmplog_cb_data {
-  struct disas_insn_operands ops;
+  struct disas_insn_operands ops; /// operands of the instruction
   char mem_accesses; // the mem accesses that have been done
-  u64 location;
-  u64 v0_mem;
-  u64 v1_mem;
+  u64 location; /// location of thge instruction
+  u64 v0_mem; /// used to store a possible memory value accessed at execution time
+  u64 v1_mem; /// used to store a possible memory value accessed at execution time
 };

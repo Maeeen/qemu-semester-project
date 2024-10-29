@@ -2,12 +2,14 @@
 #include <sys/types.h>
 #include <sys/shm.h>
 
+/// Returns whether AFL is present.
 int afl_is_here() {
     return getenv(SHM_ENV_VAR) != NULL
       && fcntl(FORKSRV_FD_IN, F_GETFD) != -1
       && fcntl(FORKSRV_FD_OUT, F_GETFD) != -1;
 }
 
+/// Reads a u32 from AFL.
 int afl_read(u32 *out) {
   if (unlikely(!afl_is_here())) {
     return 0;
@@ -31,10 +33,12 @@ int afl_write(u32 value) {
   return res != 4;
 }
 
+/// Sends an error to AFL.
 int afl_senderr(u32 error) {
   return afl_write(error | FS_NEW_ERROR);
 }
 
+/// Sets up shared memory.
 int afl_setup_shmem(void** mem, size_t* size) {
   if (unlikely(!afl_is_here())) {
     pf("AFL is not detected. Using a dummy shared map.\n");
