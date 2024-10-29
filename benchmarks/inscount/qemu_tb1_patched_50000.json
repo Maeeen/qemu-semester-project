@@ -1,0 +1,5 @@
+{"counter-value": "<not counted>", "unit": "", "event": "cpu_atom/instructions:u/", "variance": 0.0, "event-runtime": 0, "pcnt-running": 0.0, "metric-value": "0.000000", "metric-unit": ""}
+{"counter-value": "967584496.000000", "unit": "", "event": "cpu_core/instructions:u/", "variance": 0.0, "event-runtime": 128344892, "pcnt-running": 100.0, "metric-value": "0.000000", "metric-unit": "insn per cycle"}
+{"counter-value": "<not counted>", "unit": "", "event": "cpu_atom/cycles:u/", "variance": 0.0, "event-runtime": 0, "pcnt-running": 0.0, "metric-value": "0.000000", "metric-unit": ""}
+{"counter-value": "338908074.000000", "unit": "", "event": "cpu_core/cycles:u/", "variance": 0.03, "event-runtime": 128344892, "pcnt-running": 100.0, "metric-value": "2.598851", "metric-unit": "GHz"}
+{"counter-value": "130.406895", "unit": "msec", "event": "task-clock:u", "variance": 0.22, "event-runtime": 128344892, "pcnt-running": 100.0, "metric-value": "0.997003", "metric-unit": "CPUs utilized"}
