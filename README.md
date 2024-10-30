@@ -1,13 +1,35 @@
-# Implementing coverage on QEMU with plugins
+# 🚀🧩 Implementing coverage on QEMU with plugins
 
-The goal of this project is to implement what can QEMU do with plugins. The
-goal is to implement coverage and `cmplog` features for AFL++.
+The goal of this project is to explore what can QEMU do with plugins and its
+viability for fuzzing. The project is made in the context of a Master semester
+project under the supervision of Florian Hoffhammer, in the HexHive laboratory
+at _École Polytechnique Fédérale de Lausanne_, Switzerland.
 
 This project bundles simple targets for testing the plugins that are under
 the `targets/` directory.
 
-For convenience, AFLplusplus and QEMU are submodules. If not used as submodules,
-the initialization of submodules can be ignored.
+⚠ This a PoC, not a production-ready tool. ⚠
+
+## Background, and why?
+
+QEMU is a powerful emulator that can emulate a wide range of architectures.
+To leverage QEMU for fuzzing, AFL++ has a QEMU mode (`-Q`), based on a
+≥4 years old fork of QEMU. While this hasn't been a problem for most users, it
+can be interesting to see what are the downsides and upsides of using latest
+QEMU versions, leveraging plugins, with AFL++.
+
+Quickly summarized, we have (at least) the following advantages and
+disadvantages:
+- Slower than the `-Q` mode to the lack of two main things:
+  - Improving the FS performance by caching TBs translations (even though, this
+    can be achieved.)
+  - Forking at a really early stage of QEMU initialization.
+- Easier implementation and maintainability of new features, while being
+  compatible with a wide range of QEMU versions
+- Does not require obscure patches to QEMU, e.g. a *previous*
+
+It is also a very good occasion to highlight the excellent work of the QEMU
+and AFL++ developers, and to see how they can be combined.
 
 ## Project layout
 
@@ -54,9 +76,13 @@ variable defined.
 
 ## Building and use
 
+For convenience, AFLplusplus and QEMU are submodules. If not used as submodules,
+the initialization of submodules can be ignored. All the commands below are to
+be run with the correct path of your QEMU and AFL++ executables.
+
 Requirements:
 - `clang` or `gcc`
-- `make`
+- GNU `make`
 - `nasm`
 - `ld`
 - `glib-2.0`
@@ -136,9 +162,10 @@ plugin path and target path to QEMU.
 
 ### Building arguments/targets
 
-Variables:
+Preprocessor variables:
 - `DEBUG=0`: disable debug messages
-- `TARGET_BIN=<target>`: specify the target binary in `targets/`
+- `TARGET_BIN=<target>`: specify the target binary in `targets/`, used for
+  building the bootstrapper.
 
 Targets:
 - `cmplog.so`: build the `cmplog` plugin
