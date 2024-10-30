@@ -2,7 +2,7 @@
 
 The goal of this project is to explore what can QEMU do with plugins and its
 viability for fuzzing. The project is made in the context of a Master semester
-project under the supervision of Florian Hoffhammer, in the HexHive laboratory
+project under the supervision of Florian Hofhammer, in the HexHive laboratory
 at _École Polytechnique Fédérale de Lausanne_, Switzerland.
 
 This project bundles simple targets for testing the plugins that are under
