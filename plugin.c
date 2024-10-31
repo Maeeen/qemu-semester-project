@@ -10,11 +10,20 @@
 
 /// To fork only once.
 static bool is_forked = 0;
+static int has_started = 0;
 
-/// On vCPU init, fork.
-void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
-  if (!is_forked) {
+/// Setups callbacks to be called whenever the plugin resets after a successful
+/// fork.
+void setup_callbacks(qemu_plugin_id_t id);
+
+/// Setups callbacks to be called when the plugin is loaded.
+void setup_initial_callbacks(qemu_plugin_id_t id);
+
+
+void fork_start(qemu_plugin_id_t id) {
+  if (!is_forked && has_started) {
     is_forked = 1;
+    // qemu_plugin_reset(id, test);
 
     #ifdef CMPLOG
       // declare available registers for cmplog, to be able to find them back easily.
@@ -75,6 +84,18 @@ void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
       }
     }
   }
+}
+
+void syscall_cb(qemu_plugin_id_t id, unsigned int vcpu_index,
+  int64_t num, uint64_t a1, uint64_t a2,
+  uint64_t a3, uint64_t a4, uint64_t a5,
+  uint64_t a6, uint64_t a7, uint64_t a8) {
+    fork_start(id);
+}
+
+/// On vCPU init, fork.
+void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
+  // fork_start();
 }
 
 /// Register the execution of a new address.
@@ -160,7 +181,7 @@ void insn_mem(unsigned int vcpu_index, qemu_plugin_meminfo_t info, uint64_t vadd
   // Identifying which memory access we are doing
   // The implementation is simpler and does not handle the case where
   // an instruction requires more than one memory accesses.
-  // TODO: add support
+  // TODO: add support for that.
   u64* where_to_write;
   if (cb_data->ops.reg0.tpe == MEMORY && cb_data->mem_accesses == 0) {
     where_to_write = &cb_data->v0_mem;
@@ -214,15 +235,16 @@ void insn_exec(unsigned int vcpu_index, void* data) {
 }
 #endif
 
-int has_started = 0;
-
 void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
-  if (has_started == 0) {
+  if (unlikely(has_started == 0)) {
     if (qemu_plugin_start_code() == qemu_plugin_tb_vaddr(tb)) {
       has_started = 1;
     } else {
       return;
     }
+  }
+  if (unlikely(!is_forked)) {
+    return;
   }
   if (unlikely(qemu_plugin_tb_n_insns(tb) == 0)) return;
   // if the void* pointer is not enough to store the hardware address
@@ -258,6 +280,18 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
+/// Setups callbacks to be called whenever the plugin resets after a successful
+/// fork.
+void setup_callbacks(qemu_plugin_id_t id) {
+  qemu_plugin_register_vcpu_tb_trans_cb(id, vcpu_tb_trans);
+}
+
+/// Setups callbacks to be called when the plugin is loaded.
+void setup_initial_callbacks(qemu_plugin_id_t id) {
+  setup_callbacks(id);
+  qemu_plugin_register_vcpu_syscall_cb(id, syscall_cb);
+  // qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
+}
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info, int argc, char **argv) {
   #ifdef CMPLOG
@@ -266,7 +300,8 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
     exit(-1);
   }
   #endif
-  qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
-  qemu_plugin_register_vcpu_tb_trans_cb(id, vcpu_tb_trans);
+  setup_initial_callbacks(id);
+  // qemu_plugin_register_vcpu_tb_trans_cb(id, vcpu_tb_trans);
+  // qemu_plugin_register_vcpu_syscall_cb(id, syscall_cb);
   return 0;
 }
