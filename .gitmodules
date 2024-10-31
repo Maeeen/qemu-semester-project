@@ -4,3 +4,6 @@
 [submodule "AFLplusplus"]
 	path = AFLplusplus
 	url = https://github.com/AFLplusplus/AFLplusplus.git
+[submodule "report/template"]
+	path = report/template
+	url = https://github.com/Maeeen/thesis_template_typst.git
