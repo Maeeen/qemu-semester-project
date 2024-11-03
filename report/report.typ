@@ -11,30 +11,23 @@
     image("./template/logos/LABlogo.svg")
   ),
   body: [
-    Approved by the Examining Committee:
+    Prof. Mathias Payer \
+    Supervisor
 
-    Prof. Dr. sc. ETH John Doe \
-    Thesis Advisor
-
-    The External Reviewer \
-    External Expert
-
-    The Doctoral Student \
-    Thesis Supervisor
-  ]
+    Florian Hofhammer \
+    Supervisor
+  ],
+  date: datetime(year: 2025, month: 1, day: 10)
 )
 
 #dedication[
   #align(right)[
-    #quote("Follow the white rabbit...", attribution: "The Matrix", block: true)
+    #quote("What's reality? I don't know…", attribution: "Terry A. Davis", block: true)
   ]
 
   #align(center)[
-    Dedicated to my pet bunny.
+    No one to dedicate this work to, except to me and the ones that beared my existence.
   ]
-
-  The dedication is usually a short inspirational quote.
-  Define your dedication here.
 ]
 
 #pagebreak(weak: true)
@@ -43,13 +36,17 @@
 
 #page-title(title: "Acknowledgments")
 
-This is where you thank those who supported you on this journey. Good examples
-are your significant other, family, advisers, and other parties that inspired
-during this project. Generally this section is about 1/2 page to a page.
+This work would not have been possible without the amazing team at HexHive, and
+the support of my friends, who have listened to me.
+
+I would like to thank as well Florian Hofhammer for his guidance and support
+throughout the project.
+
+As well, I am scared of Prof. Mathias Payer.
 
 _Lausanne, #datetime.today().display("[month repr:long] [day padding:none], [year]")_
 #h(1fr)
-The Student
+Marwan
 
 #page-title(title: "Abstract")
 
@@ -57,19 +54,9 @@ The Student
   first-line-indent: 1em
 )
 
-The FooSystem tool enables lateral decomposition of a multi-dimensional
-flux compensator along the timing and space axes.
-
-The abstract serves as an executive summary of your project.
-Your abstract should cover at least the following topics, 1-2 sentences for
-each: what area you are in, the problem you focus on, why existing work is
-insufficient, what the high-level intuition of your work is, maybe a neat
-design or implementation decision, and key results of your evaluation.
-
-#page-title(title: "Résumé")
-
-For a doctoral thesis, you have to provide a French translation of the English
-abstract. For other projects this is optional.
+#text(fill: red)[
+  No idea to write here
+]
 
 #page-title(title: "Contents", outlined: false)
 
@@ -80,21 +67,84 @@ abstract. For other projects this is optional.
 
 #chapter(title: "Introduction")
 
-The introduction is a longer writeup that gently eases the reader into your
-thesis. Use the first paragraph to discuss the setting. In the second paragraph
-you can introduce the main challenge that you see. The third paragraph lists why
-related work is insufficient. The fourth paragraph introduces your thesis
-statement. Think how you can distill the essence of your thesis into a single
-sentence. The seventh paragraph will highlight some of your results. The eights
-paragraph discusses your core contribution.
 
-This section is usually 3-5 pages.
+// Gently ease
+_American-Fuzzy-Lop plus plus_ (AFL++) is a popular fuzzer that has been used to
+find numerous security vulnerabilities in software. The most effective way 
+to fuzz is to have coverage-guided fuzzing: when source code is available,
+AFL++ provides compiler plugins to compile the target software with
+instrumentation that allows feedback to the fuzzer on interesting inputs.
+However, for closed-source software, this is not possible.
+There are several ways to address this issue, one of them is to use CPU emulation
+and virtual machines. Therefore, AFL++ can be configured to use _Quick Emulator_
+(QEMU) using that has been patched to support AFL++, namely
+#link("https://github.com/AFLplusplus/qemuafl")[`qemuafl`].
+
+// Whoops, there's a problem, but wait… QEMU has a plugin system!
+However, the starting point of the fork of `qemuafl`
+is 4 years old
+#link("https://github.com/AFLplusplus/qemuafl/commit/5c65b1f135ff09d24827fa3a17e56a4f8a032cd5")[(commit 5c65b1f)]
+and having a more recent of QEMU would be beneficial. Using a fork is not ideal
+as fixes and improvements in the mainline QEMU are not available.
+For end-users, it is not ideal to install twice the same software, each
+having different features for the same goal, and each requiring another `make all`. #link("https://www.qemu.org/2019/12/13/qemu-4-2-0/")[QEMU 4.2]
+has introduced a plugin system letting users extend QEMU with custom code.
+Instead of using a fork of QEMU, it would be beneficial to use the plugin system to
+integrate AFL++ with QEMU, distinctively and independently from the mainline
+QEMU.
+
+// Challenge of doing it
+The challenges of this project are numerous, as QEMU is a complex piece of software,
+maintained by a large community. The plugin system is sometimes not well documented,
+and the interaction with AFL++ or QEMU is not straightforward.
+The goal of this project is to add a piece of peace to the puzzle, by providing
+a plugin that can be gently added to QEMU, filling the gap between a powerful
+emulator and a powerful fuzzer. How powerful and limiting a plugin is, is yet
+to be read by the reader currently reading this sentence.
+
+In this report, we present the design and implementation of a QEMU plugin that
+integrates AFL++ with QEMU, with very little to no effort. We will show that
+our current implementation is able to fuzz simple programs, that room for
+improvements is still there and that the plugin system remains to be improved.
+
 
 #chapter(title: "Background")
 
-The background section introduces the necessary background to understand your
-work. This is not necessarily related work but technologies and dependencies
-that must be resolved to understand your design and implementation.
+//The background section introduces the necessary background to understand your
+//work. This is not necessarily related work but technologies and dependencies
+//that must be resolved to understand your design and implementation
+
+Fuzzing is like a lab experiment with monkeys: if they discover
+that doing a certain action gives them a banana, they will keep doing it; replace
+the banana by a program crash and the monkey by a fuzzer and you have a very
+simple analogy of what fuzzing is.
+To be more formal and to put words on the analogy, fuzzing's goal is to find
+crashes. It follows a simple routine:  
+generate an input to a program, run the program with the input, and
+observe the behavior of the program. If it crashes, it likely indicate an issue in the
+program. The end-user is then free to investigate the crash and fix the issue,
+as some of these crashes can turn out to be security vulnerabilities.
+
+
+However, the fuzzer might take a while
+to find what action gives them the #strike[banana] crash.
+To guide the fuzzer in the right direction, we forward
+to the fuzzer some feedback. This feedback is usually a coverage map of the
+program, that tells the fuzzer which parts of the program have been executed.
+Upon finding an input that triggers a new part of the program, the fuzzer will
+keep this input and try to mutate it to possibly explore more parts of the
+program. Many mutators exist, and a fuzzer can be as simple as a random
+mutator or as complex as a genetic algorithm.
+
+“*How coverage is obtained?*” you might ask. Many tools out there exist but they
+essentially boil down to: at desired instructions in the program, before
+executing, do _something_.
+The _something_ can be as simple as incrementing a counter, or as complex as 
+recording the path taken by the program. The how is usually implemented with
+compiler instrumentation, specific debuggers , dynamic binary instrumentation or CPU emulation.
+
+
+
 
 This section is usually 3-5 pages.
 
