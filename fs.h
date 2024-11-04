@@ -3,7 +3,7 @@
 #include "types.h"
 
 /// Registers an execution at a given address.
-void fs_register_exec(size_t address);
+void fs_register_exec(uint64_t address);
 
 /// Initializes the shared memory for the coverage map.
 int fs_init();

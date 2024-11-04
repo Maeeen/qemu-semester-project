@@ -7,7 +7,7 @@ size_t coverage_map_size = 0;
 unsigned char* coverage_map = 0x0;
 unsigned short previous_block = 0x0;
 
-void fs_register_exec(size_t address_) {
+void fs_register_exec(uint64_t address_) {
   unsigned short address = (unsigned short) address_;
   coverage_map[address ^ previous_block]++;
   previous_block = address >> 1;

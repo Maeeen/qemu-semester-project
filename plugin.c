@@ -100,7 +100,7 @@ void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
 
 /// Register the execution of a new address.
 void tb_exec(uint32_t vcpu_index, void* data) {
-  fs_register_exec((size_t) data);
+  fs_register_exec((uint64_t) data);
 }
 
 #ifdef CMPLOG
@@ -250,8 +250,8 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   // if the void* pointer is not enough to store the hardware address
   // give up.
   _Static_assert(sizeof(void*) >= sizeof(size_t), "Invalid architecture.");
-  size_t haddr = (size_t) qemu_plugin_insn_haddr(qemu_plugin_tb_get_insn(tb, 0));
-  qemu_plugin_register_vcpu_tb_exec_cb(tb, tb_exec, QEMU_PLUGIN_CB_NO_REGS, (void*) haddr);
+  uint64_t vaddr = qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0));
+  qemu_plugin_register_vcpu_tb_exec_cb(tb, tb_exec, QEMU_PLUGIN_CB_NO_REGS, (void*) vaddr);
 
   #ifdef CMPLOG
   size_t n_insn = qemu_plugin_tb_n_insns(tb);
