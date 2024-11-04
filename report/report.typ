@@ -4,6 +4,8 @@
 #show: codly-init.with()
 
 #let code(s) = { raw(s, lang: "c") }
+#let __asm__(s) = { raw(s, lang: "asm") }
+#let cite-needed = [\[#text(red, "citation needed")\]]
 
 #codly(languages: (
   c: (name: " C", extension: "c", color: rgb("#555555"), icon: "\u{e61e}"),
@@ -153,6 +155,8 @@ instrumentation is to increment a counter at each basic block of the program. A
 basic block is a sequence of instructions that is always executed in sequence; a
 program is a list of basic blocks that are connected by jumps.
 
+In the following subsections, we will devise the requirements for the plugin.
+
 == Instrumentation under the hood
 
 Let's take a simple program that reads a character from the standard input
@@ -170,26 +174,26 @@ and either crashes or prints "Try again!" depending on the character read:
   edge((0, 2), "r", "uu", "l", "-|>")
 )
 
-Compile-time instrumentation will insert the following code (highlighted in #text(aqua, "aqua")) at the beginning of
+Compile-time instrumentation will insert the following code (highlighted in #text(teal, "teal")) at the beginning of
 each basic block:
 
 #diagram(
   spacing: (10mm, 5mm),
   node-stroke: 1pt,
   edge-stroke: 1pt,
-  node((0, -1), code("map[0]++"), stroke: aqua),
+  node((0, -1), code("map[0]++"), stroke: teal),
   edge((0, -1), "d", "-|>"),
   node((0, 0), align(left, code("y = (short) random()\nx = get_char()"))),
   edge((0, 0), "d,l,d", "-|>", code("x < 97"), label-sep: .2em), 
   edge((0, 0), "d,d", "-|>", code("x >= 97"), label-side: left),
-  node((-1, 2), code("map[1]++"), stroke: aqua),
+  node((-1, 2), code("map[1]++"), stroke: teal),
   edge((-1, 2), "d", "-|>"),
   node((-1, 3), [#code("*0x0 = 0") #emoji.explosion]),
-  node((0, 2), code("map[2]++"), stroke: aqua),
+  node((0, 2), code("map[2]++"), stroke: teal),
   edge((0, 2), "d", "-|>"),
   node((0, 3), code("print(\"Try again!\")")),
   edge((0, 3), "r", "uuu", "l", "..|>", crossing: true),
-  edge((0, 3), "rr", "uuuu", "ll", "-|>", stroke: aqua, crossing: true),
+  edge((0, 3), "rr", "uuuu", "ll", "-|>", stroke: teal, crossing: true),
 )
 
 Therefore upon an execution, the fuzzer will have information on which basic
@@ -246,7 +250,7 @@ This rather simple and elegant solution lets us devise a minimal specification
 to provide the coverage map: indices of the basic blocks are random,
 but should be deterministic across executions. Essentially, the fuzzer will
 just notice a difference in the coverage map and mark it as interesting
-[citation-needed.]
+#cite-needed
 
 == Performance
 
@@ -266,19 +270,20 @@ The general idea as we have described until now is to do the following in a loop
   
   node((6, 0), align(center)[Program execution \#0], enclose: ((6, -1), (6, 0)),
     stroke: orange, fill: orange.lighten(90%)),
-  edge((0, 1), label: [3. Get  coverage], "rrrrrr", "<|-"),
+  edge((0, 1), label: [3. Get coverage, and exit code], "rrrrrr", "<|-"),
   edge((0, 2), "r,d,l", "-|>", label: [4. Mutate input], label-side: left),
 )
 
 However, this has its drawbacks: loading the executable is actually a procedure
 can take a while, and the fuzzer is not doing anything during this time. The
-devised solution is to use a fork server: instead of spawning the program,
+devised solution is to use a fork server #cite-needed: instead of spawning the program,
 let the fuzzed binary be loaded by the operating system, and upon a request
 from the fuzzer, fork the process to be fuzzed. This way, instead of starting
 from scratch at each iteration, the forked process will be already initialized.
 Therefore, the actual protocol is as follows:
 
 #diagram(
+  debug: 1,
   spacing: (7mm, 10mm),
   node-stroke: 1pt,
   edge-stroke: 1pt,
@@ -287,28 +292,83 @@ Therefore, the actual protocol is as follows:
   node((10, -3), shape: circle, inset: 3pt, h(1pt)),
   edge((10, -3), label: [OS loads fuzzed binary], "d", "--|>", label-side: right),
   edge((0, -2), label: [1. Request new process], "rrrrrrrrrr", "-|>", label-side: left),
-  edge((10, -1.5), label: [Fork], "lllll", "--|>", label-side: left, snap-to: (auto, <fork-start>)),
-  node((5, -0), [Forked fuzzed binary], enclose: ((5, 0.5), (5, 0.5)),
+  edge((10, -1.5), label: [Fork], "lllll", "--|>", label-side: left, /*snap-to: (auto, <fork-start>)*/),
+  node((5, -0), [Forked fuzzed binary], enclose: ((5, -1.5), (5, 0.5)),
     stroke: red, fill: red.lighten(90%)),
-  node((5, -1.5), shape: circle, inset: 3pt, h(1pt)),
-  edge((0, -0.25), label: [2. Send input], "rrrrr", "-|>"),
+  edge((0, -1), label: [2. Send input], "rrrrr", "-|>"),
   edge((5, 0), label: [Fork exits], "d", "--|>", label-side: left),
-  edge((5, -1.5), "d", "--|>"),
   node((5, 1), shape: circle, inset: 3pt, h(1pt), name: <fork-start>),
   node((10, -2), align(center)[Fuzzed binary], enclose: ((10, -2), (10, 5)),
     stroke: orange, fill: orange.lighten(90%)),
   
-  edge((5, 1), label: [3. Get  coverage], "lllll", "-|>"),
+  edge((5, 1), label: [3. Get  coverage, and exit code], "lllll", "-|>"),
   edge((0, 2), "r,d,l", "-|>", label: [4. Mutate input], label-side: left),
   edge((0, 4), label: [1. Request new process], "rrrrrrrrrr", "-|>", label-side: left),
   node((5, 4.5), $dots.v$, stroke: none)
 )
 
+To implement the plugin rather effectively, the `fork` syscall should happen 
+in the plugin, as close as possible before the execution of the fuzzed binary.
+
+== Conclusion
+We have devised rather simple requirements for the plugin: it should provide
+a coverage map that is deterministic across forks, and it *should* fork. Not
+filling the requirements will result in a fuzzer that is, by design, less
+effective than `qemuafl`.
+
+== QEMU
+
+“QEMU is a binary translator” #cite-needed is the most effective way to describe
+how it works. It is a piece of software that reads a binary and translates it
+to the host's architecture. It can also simulate a whole system, but we will focus
+only on userspace emulation, `x86_64-linux-user` for the purpose of this
+project. However, we will define the relevant parts.
+
+QEMU reads the binary, basic block per basic block, and translates them into
+an _intermediate representation_ (IR) called TCG (for Tiny Code Generator). 
+There is two parts for the translation: the frontend, that reads the binary and
+translates it into TCG, and the backend, that translates the TCG into the host's
+architecture. The frontend is target-specific, and the backend is host-specific.
+
+
+// Let's take our running, but, compiled (and simplified assembly):
+// #diagram(
+//   debug: 1,
+//   spacing: (5mm, 10mm),
+//   node-stroke: 1pt,
+//   edge-stroke: 1pt,
+//   node((0, 0), shape: rect, align(left, __asm__("call <getc>\nrand %bx\ncmp %ax, %bx\njl <unvalid>"))),
+//   edge((0, 0.25), "l,d", "-|>", code("x < y"), label-sep: .2em, snap-to: (auto, <explosion>)), 
+//   edge((0, 0), "d", "-|>", /* [#code("x >= y"), implicitly], */label-side: right),
+//   node((0, 1), align(left, [$dots.h$\ #__asm__("call <puts>\njmp <main>")])),
+//   node((-1, 1), [#__asm__("mov $0x0, 0x0") #emoji.explosion], name: <explosion>),
+//   edge((0, 1.30), "r", "u", (1, -0.35), "l", "-|>"),
+//   edge((2, 0.5), "rr", "-|>")
+// )
+
+QEMU will translate each basic block (here, a node) to TCG, and then to the
+host's architecture. The translation is done lazily (i.e. done when it is
+required to be done), and the translation is cached.
+
+With plugins, here is a non-exhaustive list of what callbacks can be added:
+- intercepting syscalls
+- instrumenting instructions (either add an inline `add` instruction
+or a callback to a plugin-defined function)
+
+
+
 
 This section is usually 3-5 pages.
 
 
-#chapter(title: "Design")
+#chapter(title: "Coverage and forking design tentatives")
+
+== Coverage
+
+The coverage map is a key component of AFL++'s feedback loop, and can be
+implemented in easy 
+
+== Forking, first try
 
 Introduce and discuss the design decisions that you made during this project.
 Highlight why individual decisions are important and/or necessary. Discuss
@@ -348,3 +408,5 @@ This section is usually 3-5 pages.
 In the conclusion you repeat the main result and finalize the discussion of
 your project. Mention the core results and why as well as how your system
 advances the status quo.
+
+#bibliography("bib.bib")
