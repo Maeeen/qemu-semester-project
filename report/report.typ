@@ -3,9 +3,18 @@
 #import "@preview/codly:1.0.0": *
 #show: codly-init.with()
 
+#set page(background: box(height: 100%, width: 100%)[
+  #align(center + horizon)[
+    #rotate(-45deg)[
+      #text(red.transparentize(70%), size: 84pt, "DRAFT")
+    ]
+  ]
+])
+
 #let code(s) = { raw(s, lang: "c") }
 #let __asm__(s) = { raw(s, lang: "asm") }
 #let cite-needed = [\[#text(red, "citation needed")\]]
+#let TODO = [\[#text(red, "TODO")\]]
 
 #codly(languages: (
   c: (name: " C", extension: "c", color: rgb("#555555"), icon: "\u{e61e}"),
@@ -160,7 +169,7 @@ In the following subsections, we will devise the requirements for the plugin.
 == Instrumentation under the hood
 
 Let's take a simple program that reads a character from the standard input
-and either crashes or prints "Try again!" depending on the character read:
+and either crashes or prints "Try again!" depending on the read character: 
 
 #diagram(
   spacing: (5mm, 10mm),
@@ -207,7 +216,7 @@ where types have been explicitly added for clarity:
 #codly-offset(offset: 247)
 ```c
 (unsigned short) cur_location = <COMPILE_TIME_RANDOM>;
-(unsigned short*) shared_mem[cur_location ^ prev_location]++; 
+((unsigned short*) shared_mem)[cur_location ^ prev_location]++; 
 
 (unsigned short) prev_location = cur_location >> 1;
 ```
@@ -276,10 +285,12 @@ The general idea as we have described until now is to do the following in a loop
 
 However, this has its drawbacks: loading the executable is actually a procedure
 can take a while, and the fuzzer is not doing anything during this time. The
-devised solution is to use a fork server #cite-needed: instead of spawning the program,
+devised solution is to use a fork server #cite-needed: instead of spawning the
+program,
 let the fuzzed binary be loaded by the operating system, and upon a request
 from the fuzzer, fork the process to be fuzzed. This way, instead of starting
-from scratch at each iteration, the forked process will be already initialized.
+from scratch at each iteration, the forked process will be already initialized
+and ready for input.
 Therefore, the actual protocol is as follows:
 
 #diagram(
@@ -311,10 +322,12 @@ To implement the plugin rather effectively, the `fork` syscall should happen
 in the plugin, as close as possible before the execution of the fuzzed binary.
 
 == Conclusion
+
 We have devised rather simple requirements for the plugin: it should provide
 a coverage map that is deterministic across forks, and it *should* fork. Not
 filling the requirements will result in a fuzzer that is, by design, less
-effective than `qemuafl`.
+effective than `qemuafl`. The obvious main requirement is to *not modify
+a single line of QEMU's code*.
 
 == QEMU
 
@@ -350,10 +363,17 @@ QEMU will translate each basic block (here, a node) to TCG, and then to the
 host's architecture. The translation is done lazily (i.e. done when it is
 required to be done), and the translation is cached.
 
+QEMU's internal can be drawn as the following: #TODO
+
 With plugins, here is a non-exhaustive list of what callbacks can be added:
-- intercepting syscalls
-- instrumenting instructions (either add an inline `add` instruction
-or a callback to a plugin-defined function)
+- on syscalls
+- on instructions (either add an inline `add` instruction or
+  a callback to a plugin-defined function)
+- on virtual CPU initialization
+- on memory accesses
+but it also have some drawbacks, notably, one can not inspect the internals of
+the emulator, e.g. TCG code: QEMU deserves a book on its own, so we will go
+through each part as needed.
 
 
 
@@ -363,12 +383,120 @@ This section is usually 3-5 pages.
 
 #chapter(title: "Coverage and forking design tentatives")
 
-== Coverage
+== Instrumentation
 
-The coverage map is a key component of AFL++'s feedback loop, and can be
-implemented in easy 
+The instrumentation is a key component of any fuzzing tools, and can be
+implemented in an easy manner with plugins, in less than 11 lines of C code:
+
+```c
+int qemu_plugin_install(…) {
+  qemu_plugin_register_vcpu_tb_trans_cb(…, on_tb_trans);
+}
+
+// On translation, this function will be executed.
+void vcpu_tb_trans(…, struct qemu_plugin_tb *tb) {
+  // Get the virtual address (guest) of the first instruction
+  uint64_t vaddr = qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0));
+  // Register a callback on execution for the basic block
+  qemu_plugin_register_vcpu_tb_exec_cb(tb, tb_exec, QEMU_PLUGIN_CB_NO_REGS, (void*) vaddr);
+}
+
+// On execution of a TB, this function will be executed.
+void tb_exec(…, void* user_data) {
+  uint64_t address = (uint64_t) user_data;
+  // The translation block at `address` has been executed.
+  has_been_executed(address);
+}
+```
+
+This is a really strong point compared to `qemuafl`: the change is minimal, and
+does not involve messing around with the TCG translation (at least… indirectly.)
+To comply with callbacks, QEMU inserts a `call` instruction to the plugin's
+`tb_exec` callback at the beginning of each TB. Design-wise, it is simple,
+easily maintanable and therefore easy to change and improve!
+
+But this is only the first part of building the plugin, the second part is to
+make the `fork` in fork server happen.
 
 == Forking, first try
+
+Let play it simple in a pragmatic way of learning: what happens if we `fork` inside the plugin? Let's make it
+at initialization:
+
+```c
+int qemu_plugin_install(…) {
+  fork();
+}
+```
+
+We obtain the following while running the plugin:
+
+```
+qemu: qemu_mutex_unlock_impl: Operation not permitted
+```
+
+$arrow$ There is a lock taken at plugin initialization, and it's not really too
+much of a surprise, if one reads the documentation:
+
+#quote(block: true, attribution: [https://www.qemu.org/docs/master/devel/tcg-plugins.html#locking])[
+  We have to ensure we cannot deadlock, particularly under MTTCG. For this we acquire a lock when called from plugin code. We also keep the list of callbacks under RCU so that we do not have to hold the lock when calling the callbacks. This is also for performance, since some callbacks (e.g. memory access callbacks) might be called very frequently.
+]
+
+So, it seems that we can't `fork` at initialization…
+
+We considered temporarily making a `fork` in user-space: wait for a signal from
+the plugin, `fork` then `exec` the fuzzed binary. However, if an emulated
+program in QEMU makes the `exec` syscall (e.g. `exec("sl")`), the `exec` syscall
+is forwarded to the host's kernel. Therefore, this idea has been
+dropped.
+
+What about other callbacks? In this setup, a good thought would be to think of
+places where no TCG is
+involved. One of these places where plugin callbacks can be registered where the
+TCG is not involved is on the initialization of a virtual CPU. We will propose
+a second solution later in a future, yet to be read, chapter.
+
+So, here is where we are:
+
+- #emoji.checkmark Coverage
+- #emoji.checkmark Fork
+- #emoji.quest AFL++
+
+== AFL protocol breakdown
+
+AFL and the target binary communicate through a pipe, consisting of two file
+descriptors, namely 198 and 199. The target binary reads from the file
+descriptor.
+
+// https://github.com/Maeeen/qemu-semester-project/blob/112da69a86eb78f685bb3daefb8b2675996b0057/code/my-plugin/plugin.c#L314
+
+#diagram(
+  debug: 1,
+  spacing: (7mm, 10mm),
+  node-stroke: 1pt,
+  edge-stroke: 1pt,
+  node((0, 0), enclose: ((0, -3), (0, 5)), [Fuzzer (AFL++)], stroke: teal, fill: teal.lighten(90%)),
+  edge((0, -3), label: [0. Spawn program], "rrrrrrrrrr", "..|>"),
+  node((10, -3), shape: circle, inset: 3pt, h(1pt)),
+  edge((10, -3), label: [OS loads fuzzed binary], "d", "--|>", label-side: right),
+  edge((10, -2), label: [1. Hi #emoji.wave], "llllllllll", "-|>", label-side: right),
+  edge((10, -1.5), label: [Fork], "lllll", "--|>", label-side: left, /*snap-to: (auto, <fork-start>)*/),
+  node((5, -0), [Forked fuzzed binary], enclose: ((5, -1.5), (5, 0.5)),
+    stroke: red, fill: red.lighten(90%)),
+  edge((0, -1), label: [2. Send input], "rrrrr", "-|>"),
+  edge((5, 0), label: [Fork exits], "d", "--|>", label-side: left),
+  node((5, 1), shape: circle, inset: 3pt, h(1pt), name: <fork-start>),
+  node((10, -2), align(center)[Fuzzed binary], enclose: ((10, -2), (10, 5)),
+    stroke: orange, fill: orange.lighten(90%)),
+  
+  edge((5, 1), label: [3. Get  coverage, and exit code], "lllll", "-|>"),
+  edge((0, 2), "r,d,l", "-|>", label: [4. Mutate input], label-side: left),
+  edge((0, 4), label: [1. Request new process], "rrrrrrrrrr", "-|>", label-side: left),
+  node((5, 4.5), $dots.v$, stroke: none)
+)
+
+#TODO
+
 
 Introduce and discuss the design decisions that you made during this project.
 Highlight why individual decisions are important and/or necessary. Discuss
@@ -408,5 +536,10 @@ This section is usually 3-5 pages.
 In the conclusion you repeat the main result and finalize the discussion of
 your project. Mention the core results and why as well as how your system
 advances the status quo.
+
+= Sources
+
+All the project is available under the following GitHub repository: 
+#link("https://github.com/Maeeen/qemu-semester-project")
 
 #bibliography("bib.bib")

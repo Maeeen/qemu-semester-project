@@ -23,10 +23,10 @@ disadvantages:
 - Slower than the `-Q` mode to the lack of two main things:
   - Improving the FS performance by caching TBs translations (even though, this
     can be achieved.)
-  - Forking at a really early stage of QEMU initialization.
+  - ~~Forking at a really early stage of QEMU initialization.~~ Now fixed!
 - Easier implementation and maintainability of new features, while being
   compatible with a wide range of QEMU versions
-- Does not require obscure patches to QEMU, e.g. a *previous*
+- Does not require obscure patches to QEMU
 
 It is also a very good occasion to highlight the excellent work of the QEMU
 and AFL++ developers, and to see how they can be combined.
