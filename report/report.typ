@@ -471,28 +471,28 @@ descriptor.
 // https://github.com/Maeeen/qemu-semester-project/blob/112da69a86eb78f685bb3daefb8b2675996b0057/code/my-plugin/plugin.c#L314
 
 #diagram(
-  debug: 1,
+
   spacing: (7mm, 10mm),
   node-stroke: 1pt,
   edge-stroke: 1pt,
-  node((0, 0), enclose: ((0, -3), (0, 5)), [Fuzzer (AFL++)], stroke: teal, fill: teal.lighten(90%)),
+  node((0, 0), enclose: ((0, -3), (0, 3.5)), [Fuzzer (AFL++)], stroke: teal, fill: teal.lighten(90%)),
   edge((0, -3), label: [0. Spawn program], "rrrrrrrrrr", "..|>"),
-  node((10, -3), shape: circle, inset: 3pt, h(1pt)),
-  edge((10, -3), label: [OS loads fuzzed binary], "d", "--|>", label-side: right),
-  edge((10, -2), label: [1. Hi #emoji.wave], "llllllllll", "-|>", label-side: right),
-  edge((10, -1.5), label: [Fork], "lllll", "--|>", label-side: left, /*snap-to: (auto, <fork-start>)*/),
-  node((5, -0), [Forked fuzzed binary], enclose: ((5, -1.5), (5, 0.5)),
-    stroke: red, fill: red.lighten(90%)),
-  edge((0, -1), label: [2. Send input], "rrrrr", "-|>"),
-  edge((5, 0), label: [Fork exits], "d", "--|>", label-side: left),
-  node((5, 1), shape: circle, inset: 3pt, h(1pt), name: <fork-start>),
-  node((10, -2), align(center)[Fuzzed binary], enclose: ((10, -2), (10, 5)),
+  node((10, -2), align(center)[Fuzzed binary], enclose: ((10, -2), (10, 3.5)),
     stroke: orange, fill: orange.lighten(90%)),
-  
-  edge((5, 1), label: [3. Get  coverage, and exit code], "lllll", "-|>"),
-  edge((0, 2), "r,d,l", "-|>", label: [4. Mutate input], label-side: left),
-  edge((0, 4), label: [1. Request new process], "rrrrrrrrrr", "-|>", label-side: left),
-  node((5, 4.5), $dots.v$, stroke: none)
+  node((10, -3), shape: circle, inset: 3pt, h(1pt)),
+  edge((10, -3), label: [OS loads fuzzed binary], "d", "-|>", label-side: right),
+  edge((10, -2), label: [1. Hi #emoji.wave], "llllllllll", "-|>", label-side: right),
+  edge((0, -1.5), label: [2. Fork me a process #emoji.hands], "rrrrrrrrrr", "-|>"),
+  edge((10, -1), label: [3. Okay, here it is], "lllll", "-"),
+  edge((5, -1), label: [], "lllll", "-|>"),
+  node((5, -1), [Forked fuzzed binary], enclose: ((5, -1.5), (5, 0.5)),
+    stroke: red, fill: red.lighten(90%)),
+  edge((5, 0.5), label: [4. Get coverage], "lllll", "-|>"),
+  edge((5, 0.5), label: [4.], "rrrrr", "-|>"),
+  edge((10, 1.5), label: [5. Send status], "llllllllll", "-|>"),
+  edge((0, 3), label: [6. Fork me a process #emoji.hands], "rrrrrrrrrr", "-|>"),
+  node((5, 3.5), $dots.v$, stroke: none),
+
 )
 
 #TODO
