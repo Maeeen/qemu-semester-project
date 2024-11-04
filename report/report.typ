@@ -1,4 +1,13 @@
 #import "./template/template/template.typ": *
+#import "@preview/fletcher:0.5.2" as fletcher: diagram, node, edge
+#import "@preview/codly:1.0.0": *
+#show: codly-init.with()
+
+#let code(s) = { raw(s, lang: "c") }
+
+#codly(languages: (
+  c: (name: " C", extension: "c", color: rgb("#555555"), icon: "\u{e61e}"),
+))
 
 #show: setup-page-counting
 
@@ -26,7 +35,7 @@
   ]
 
   #align(center)[
-    No one to dedicate this work to, except to me and the ones that beared my existence.
+    No one to dedicate this work to, except to the ones that beared my existence.
   ]
 ]
 
@@ -37,7 +46,7 @@
 #page-title(title: "Acknowledgments")
 
 This work would not have been possible without the amazing team at HexHive, and
-the support of my friends, who have listened to me.
+those that have seen me yap about how I loved working on this project.
 
 I would like to thank as well Florian Hofhammer for his guidance and support
 throughout the project.
@@ -125,7 +134,6 @@ observe the behavior of the program. If it crashes, it likely indicate an issue 
 program. The end-user is then free to investigate the crash and fix the issue,
 as some of these crashes can turn out to be security vulnerabilities.
 
-
 However, the fuzzer might take a while
 to find what action gives them the #strike[banana] crash.
 To guide the fuzzer in the right direction, we forward
@@ -140,10 +148,161 @@ mutator or as complex as a genetic algorithm.
 essentially boil down to: at desired instructions in the program, before
 executing, do _something_.
 The _something_ can be as simple as incrementing a counter, or as complex as 
-recording the path taken by the program. The how is usually implemented with
-compiler instrumentation, specific debuggers , dynamic binary instrumentation or CPU emulation.
+recording the path taken by the program. The simplest way taken by AFL++'s
+instrumentation is to increment a counter at each basic block of the program. A
+basic block is a sequence of instructions that is always executed in sequence; a
+program is a list of basic blocks that are connected by jumps.
 
+== Instrumentation under the hood
 
+Let's take a simple program that reads a character from the standard input
+and either crashes or prints "Try again!" depending on the character read:
+
+#diagram(
+  spacing: (5mm, 10mm),
+  node-stroke: 1pt,
+  edge-stroke: 1pt,
+  node((0, 0), align(left, code("y = (short) random()\nx = get_char()"))),
+  edge((0, 0), "d,l,d", "-|>", code("x < y"), label-sep: .2em), 
+  edge((0, 0), "d,d", "-|>", code("x >= y"), label-side: left),
+  node((0, 2), code("print(\"Try again!\")")),
+  node((-1, 2), [#code("*0x0 = 0") #emoji.explosion]),
+  edge((0, 2), "r", "uu", "l", "-|>")
+)
+
+Compile-time instrumentation will insert the following code (highlighted in #text(aqua, "aqua")) at the beginning of
+each basic block:
+
+#diagram(
+  spacing: (10mm, 5mm),
+  node-stroke: 1pt,
+  edge-stroke: 1pt,
+  node((0, -1), code("map[0]++"), stroke: aqua),
+  edge((0, -1), "d", "-|>"),
+  node((0, 0), align(left, code("y = (short) random()\nx = get_char()"))),
+  edge((0, 0), "d,l,d", "-|>", code("x < 97"), label-sep: .2em), 
+  edge((0, 0), "d,d", "-|>", code("x >= 97"), label-side: left),
+  node((-1, 2), code("map[1]++"), stroke: aqua),
+  edge((-1, 2), "d", "-|>"),
+  node((-1, 3), [#code("*0x0 = 0") #emoji.explosion]),
+  node((0, 2), code("map[2]++"), stroke: aqua),
+  edge((0, 2), "d", "-|>"),
+  node((0, 3), code("print(\"Try again!\")")),
+  edge((0, 3), "r", "uuu", "l", "..|>", crossing: true),
+  edge((0, 3), "rr", "uuuu", "ll", "-|>", stroke: aqua, crossing: true),
+)
+
+Therefore upon an execution, the fuzzer will have information on which basic
+block has been inserted.
+
+However, with such a `map[0…n]`, one must have an array in memory as long as the
+number of basic blocks in the program. This is not ideal, as the memory
+consumption can be high. To address this issue, AFL++ uses the following code,
+where types have been explicitly added for clarity:
+
+#codly-offset(offset: 247)
+```c
+(unsigned short) cur_location = <COMPILE_TIME_RANDOM>;
+(unsigned short*) shared_mem[cur_location ^ prev_location]++; 
+
+(unsigned short) prev_location = cur_location >> 1;
+```
+#align(right)[
+  #link("https://lcamtuf.coredump.cx/afl/technical_details.txt#:~:text=cur_location%20%3D%20%3CCOMPILE_TIME_RANDOM%3E%3B%0A%20%20shared_mem%5Bcur_location%20%5E%20prev_location%5D%2B%2B%3B%20%0A%20%20prev_location%20%3D%20cur_location%20%3E%3E%201%3B")[AFL technical details],
+  #link("https://github.com/AFLplusplus/AFLplusplus/blob/d0587a3ac46b1652b1b51b3253c9833d0ea06a13/instrumentation/afl-compiler-rt.o.c#L248-L251", `AFLplusplus/instrumentation/afl-compiler-rt.o.c:248-251`), #link("https://github.com/AFLplusplus/AFLplusplus/blob/d0587a3ac46b1652b1b51b3253c9833d0ea06a13/instrumentation/afl-gcc-pass.so.cc#L217C1-L334C56")[`AFLplusplus/instrumentation/afl-gcc-pass.so.cc:217-334`]
+]
+
+To get back on our running example, it would look like the following:
+
+#diagram(
+  spacing: (10mm, 5mm),
+  node-stroke: 1pt,
+  edge-stroke: 1pt,
+  node((0, -1), align(left, code("cur = 0xbeef\nshared_mem[cur ^ prev]++;\nprev = cur >> 1;")), stroke: aqua),
+  edge((0, -1), "d", "-|>"),
+  node((0, 0), align(left, code("y = (short) random()\nx = get_char()"))),
+  edge((0, 0), "d,l,d", "-|>", code("x < 97"), label-sep: .2em), 
+  edge((0, 0), "d,d", "-|>", code("x >= 97"), label-side: left),
+  node((-1, 2), align(left, code("cur = 0xcafe\nshared_mem[cur ^ prev]++;\nprev = cur >> 1;")), stroke: aqua),
+  edge((-1, 2), "d", "-|>"),
+  node((-1, 3), [#code("*0x0 = 0") #emoji.explosion]),
+  node((0, 2), align(left, code("cur = 0xf00d\nshared_mem[cur ^ prev]++;\nprev = cur >> 1;")), stroke: aqua),
+  edge((0, 2), "d", "-|>"),
+  node((0, 3), code("print(\"Try again!\")")),
+  edge((0, 3), "r", "uuu", "l", "..|>", crossing: true),
+  edge((0, 3), "rr", "uuuu", "ll", "-|>", stroke: aqua, crossing: true),
+)
+
+There is notable remarks to make: (1) the map is 64 kilo-bytes; (2) the constant `cur` 
+are determined at compile-time; (3) the `prev` is a global variable, i.e. it is
+stateful; (4) it is lossy.
+
+The implementation details in the [AFL technical details] highlights that it can
+effortlessly fit the L2 cache of the CPU, and that its stateful nature permits
+to distinguish between different executions of the same program, that would still
+invoke the same basic blocks.
+
+This rather simple and elegant solution lets us devise a minimal specification
+to provide the coverage map: indices of the basic blocks are random,
+but should be deterministic across executions. Essentially, the fuzzer will
+just notice a difference in the coverage map and mark it as interesting
+[citation-needed.]
+
+== Performance
+
+The general idea as we have described until now is to do the following in a loop:
+
+#diagram(
+  spacing: (10mm, 10mm),
+  node-stroke: 1pt,
+  edge-stroke: 1pt,
+  node((0, 0), enclose: ((0, -3), (0, 3)), [Fuzzer (AFL++)], stroke: teal, fill: teal.lighten(90%)),
+  edge((0, -3), label: [1. Spawn program], "rrrrrr", "..|>"),
+  node((6, -3), shape: circle, inset: 3pt, h(1pt)),
+  edge((6, -3), label: [OS loads fuzzed binary], "dd", "--|>", label-side: left),
+  edge((0, -1), label: [2. Send input], "rrrrrr", "-|>",  label-side: left),
+  edge((6, 0), label: [Program exits], "d", "--|>", label-side: left),
+  node((6, 1), shape: circle, inset: 3pt, h(1pt)),
+  
+  node((6, 0), align(center)[Program execution \#0], enclose: ((6, -1), (6, 0)),
+    stroke: orange, fill: orange.lighten(90%)),
+  edge((0, 1), label: [3. Get  coverage], "rrrrrr", "<|-"),
+  edge((0, 2), "r,d,l", "-|>", label: [4. Mutate input], label-side: left),
+)
+
+However, this has its drawbacks: loading the executable is actually a procedure
+can take a while, and the fuzzer is not doing anything during this time. The
+devised solution is to use a fork server: instead of spawning the program,
+let the fuzzed binary be loaded by the operating system, and upon a request
+from the fuzzer, fork the process to be fuzzed. This way, instead of starting
+from scratch at each iteration, the forked process will be already initialized.
+Therefore, the actual protocol is as follows:
+
+#diagram(
+  spacing: (7mm, 10mm),
+  node-stroke: 1pt,
+  edge-stroke: 1pt,
+  node((0, 0), enclose: ((0, -3), (0, 5)), [Fuzzer (AFL++)], stroke: teal, fill: teal.lighten(90%)),
+  edge((0, -3), label: [0. Spawn program], "rrrrrrrrrr", "..|>"),
+  node((10, -3), shape: circle, inset: 3pt, h(1pt)),
+  edge((10, -3), label: [OS loads fuzzed binary], "d", "--|>", label-side: right),
+  edge((0, -2), label: [1. Request new process], "rrrrrrrrrr", "-|>", label-side: left),
+  edge((10, -1.5), label: [Fork], "lllll", "--|>", label-side: left, snap-to: (auto, <fork-start>)),
+  node((5, -0), [Forked fuzzed binary], enclose: ((5, 0.5), (5, 0.5)),
+    stroke: red, fill: red.lighten(90%)),
+  node((5, -1.5), shape: circle, inset: 3pt, h(1pt)),
+  edge((0, -0.25), label: [2. Send input], "rrrrr", "-|>"),
+  edge((5, 0), label: [Fork exits], "d", "--|>", label-side: left),
+  edge((5, -1.5), "d", "--|>"),
+  node((5, 1), shape: circle, inset: 3pt, h(1pt), name: <fork-start>),
+  node((10, -2), align(center)[Fuzzed binary], enclose: ((10, -2), (10, 5)),
+    stroke: orange, fill: orange.lighten(90%)),
+  
+  edge((5, 1), label: [3. Get  coverage], "lllll", "-|>"),
+  edge((0, 2), "r,d,l", "-|>", label: [4. Mutate input], label-side: left),
+  edge((0, 4), label: [1. Request new process], "rrrrrrrrrr", "-|>", label-side: left),
+  node((5, 4.5), $dots.v$, stroke: none)
+)
 
 
 This section is usually 3-5 pages.
