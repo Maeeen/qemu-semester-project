@@ -12,6 +12,15 @@
 static bool is_forked = 0;
 static int has_started = 0;
 
+// Enable this to enable the slower fork.
+// #define FORK_AT_VCPU_INIT
+// Enable this to instrument only after the first instruction of the program
+// (works only without FORK_AT_VCPU_INIT)
+#define INSTRUMENT_AFTER_START
+// To disable the cache of disassemblies
+// #define DISABLE_CMPLOG_CACHE
+
+
 /// Setups callbacks to be called whenever the plugin resets after a successful
 /// fork.
 void setup_callbacks(qemu_plugin_id_t id);
@@ -58,9 +67,16 @@ void fork_start(qemu_plugin_id_t id) {
       while(1) {
         #ifdef CMPLOG
         // between very iteration, disassemble the pending instructions
+        #ifndef DISABLE_CMPLOG_CACHE
         if (fs_loop(disas_handle_pending)) {
           break;
         }
+        #else
+        if (fs_loop(NULL)) {
+          break;
+        }
+        #endif
+
         #else
         if (fs_loop(NULL)) {
           break;
@@ -90,12 +106,17 @@ void syscall_cb(qemu_plugin_id_t id, unsigned int vcpu_index,
   int64_t num, uint64_t a1, uint64_t a2,
   uint64_t a3, uint64_t a4, uint64_t a5,
   uint64_t a6, uint64_t a7, uint64_t a8) {
+  #ifndef FORK_AT_VCPU_INIT
     fork_start(id);
+  #endif
 }
 
 /// On vCPU init, fork.
 void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
-  // fork_start();
+  #ifdef FORK_AT_VCPU_INIT
+  has_started = 1;
+  fork_start(id);
+  #endif
 }
 
 /// Register the execution of a new address.
@@ -236,6 +257,7 @@ void insn_exec(unsigned int vcpu_index, void* data) {
 #endif
 
 void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
+  #ifdef INSTRUMENT_AFTER_START
   if (unlikely(has_started == 0)) {
     if (qemu_plugin_start_code() == qemu_plugin_tb_vaddr(tb)) {
       has_started = 1;
@@ -243,6 +265,9 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
       return;
     }
   }
+  #else
+  has_started = 1;
+  #endif
   if (unlikely(!is_forked)) {
     return;
   }
@@ -289,8 +314,11 @@ void setup_callbacks(qemu_plugin_id_t id) {
 /// Setups callbacks to be called when the plugin is loaded.
 void setup_initial_callbacks(qemu_plugin_id_t id) {
   setup_callbacks(id);
+  #ifndef FORK_AT_VCPU_INIT
   qemu_plugin_register_vcpu_syscall_cb(id, syscall_cb);
-  // qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
+  #else
+  qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
+  #endif
 }
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info, int argc, char **argv) {

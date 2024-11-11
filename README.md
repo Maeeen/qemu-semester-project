@@ -124,6 +124,12 @@ make -C ../ targets/coverage # example target that cheks for "fuzz"
 AFL_SKIP_BIN_CHECK=1 ../AFLplusplus/afl-fuzz -i ./afl-in -o ./afl-out -- ../qemu/build/qemu-x86_64 -plugin ../plugin.so ../targets/coverage
 ```
 
+or in an easy and straightforward way:
+
+```
+make TARGET_BIN=coverage fuzz
+```
+
 ### Run with cmplog
 
 ```
@@ -138,6 +144,12 @@ AFL_SKIP_BIN_CHECK=1 ../AFLplusplus/afl-fuzz -i ./afl-in -o ./afl-out -c ./cmplo
 
 The `cmplog` feature is very powerful, with observed little slowdowns compared to
 the coverage-only plugin. The above example should find the magic input in mere seconds.
+
+or:
+
+```
+make TARGET_BIN=coverage-long fuzz
+```
 
 ### Details
 

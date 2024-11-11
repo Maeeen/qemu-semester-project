@@ -11,3 +11,4 @@ targets/coverage-long
 *.so
 cmplog-bootstrapper
 test/**
+fuzz/**

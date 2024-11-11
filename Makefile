@@ -15,13 +15,14 @@ endif
 
 ROOT_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 
-TARGET_BIN=hello-asm
+TARGET_BIN=coverage
 TARGET=targets/$(TARGET_BIN)
 TARGET_FULLPATH:=$(ROOT_DIR)/$(TARGET)
 
 FS_RUN=targets/fs-c
 
 QEMUPATH=$(ROOT_DIR)/qemu
+AFLPATH=$(ROOT_DIR)/AFLplusplus
 CFLAGS += -I$(QEMUPATH)/include/qemu
 CFLAGS += $(shell pkg-config --cflags glib-2.0)
 CFLAGS += $(shell pkg-config --cflags capstone)
@@ -29,9 +30,7 @@ CFLAGS += $(shell pkg-config --cflags capstone)
 plugin.so: CFLAGS += -Werror
 
 .SECONDARY:
-.PHONY: all clean
-
-all: plugin.so $(TARGET) $(FS_RUN)
+.PHONY: clean
 
 # plugin so
 # then no dots
@@ -43,6 +42,7 @@ clean:
 	# Delete all object files
 	find ./targets -type f -name "*.o" -delete
 	rm cmplog-bootstrapper || true
+	rm -rf fuzz || true
 
 # Compile plugin
 plugin.so: plugin.o afl.o fs.o
@@ -98,3 +98,17 @@ debug-fs: $(TARGET) $(FS_RUN) plugin.so
 
 dbg-cmplog: $(TARGET) cmplog.so
 	$(DBG) --args $(QEMUPATH)/build/qemu-x86_64 -plugin ./cmplog.so ./$(TARGET)
+
+fuzz: clean $(TARGET) plugin.so
+	@rm -rf fuzz || true
+	@mkdir fuzz && cd fuzz; \
+	mkdir afl-in afl-out; \
+	echo prout > $(ROOT_DIR)/fuzz/afl-in/seed; \
+	AFL_SKIP_BIN_CHECK=1 $(AFLPATH)/afl-fuzz -i ./afl-in -o ./afl-out -- ../qemu/build/qemu-x86_64 -plugin ../plugin.so $(TARGET_FULLPATH)
+
+fuzz-cmplog: clean $(TARGET) cmplog.so cmplog-bootstrapper
+	@rm -rf fuzz || true
+	@mkdir fuzz && cd fuzz; \
+	mkdir afl-in afl-out; \
+	echo prout > $(ROOT_DIR)/fuzz/afl-in/seed; \
+	AFL_SKIP_BIN_CHECK=1 $(AFLPATH)/afl-fuzz -i ./afl-in -o ./afl-out -c ../cmplog-bootstrapper -- ../qemu/build/qemu-x86_64 -plugin ../plugin.so $(TARGET_FULLPATH)
