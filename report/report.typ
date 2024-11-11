@@ -78,7 +78,7 @@ Marwan
   No idea to write here
 ]
 
-#generate-outline()
+#generate-outline
 
 #chapter(title: "Introduction")
 
