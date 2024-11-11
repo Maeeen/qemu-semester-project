@@ -78,12 +78,7 @@ Marwan
   No idea to write here
 ]
 
-#page-title(title: "Contents", outlined: false)
-
-#outline(
-  title: none,
-  fill: none,
-)
+#generate-outline()
 
 #chapter(title: "Introduction")
 
@@ -166,7 +161,7 @@ program is a list of basic blocks that are connected by jumps.
 
 In the following subsections, we will devise the requirements for the plugin.
 
-== Instrumentation under the hood
+#subchapter(title: "Instrumentation under the hood")
 
 Let's take a simple program that reads a character from the standard input
 and either crashes or prints "Try again!" depending on the read character: 
@@ -261,7 +256,7 @@ but should be deterministic across executions. Essentially, the fuzzer will
 just notice a difference in the coverage map and mark it as interesting
 #cite-needed
 
-== Performance
+#subchapter(title: "Performance")
 
 The general idea as we have described until now is to do the following in a loop:
 
@@ -321,7 +316,7 @@ Therefore, the actual protocol is as follows:
 To implement the plugin rather effectively, the `fork` syscall should happen 
 in the plugin, as close as possible before the execution of the fuzzed binary.
 
-== Conclusion
+#subchapter(title: "Conclusion")
 
 We have devised rather simple requirements for the plugin: it should provide
 a coverage map that is deterministic across forks, and it *should* fork. Not
@@ -329,7 +324,7 @@ filling the requirements will result in a fuzzer that is, by design, less
 effective than `qemuafl`. The obvious main requirement is to *not modify
 a single line of QEMU's code*.
 
-== QEMU
+#subchapter(title: "QEMU introduction")
 
 “QEMU is a binary translator” #cite-needed is the most effective way to describe
 how it works. It is a piece of software that reads a binary and translates it
@@ -381,9 +376,10 @@ through each part as needed.
 This section is usually 3-5 pages.
 
 
-#chapter(title: "Coverage and forking design tentatives")
+#chapter(title: "Coverage and forking design tentatives // Towards a PoC")
 
-== Instrumentation
+#subchapter(title: "Instrumentation")
+
 
 The instrumentation is a key component of any fuzzing tools, and can be
 implemented in an easy manner with plugins, in less than 11 lines of C code:
@@ -418,7 +414,8 @@ easily maintanable and therefore easy to change and improve!
 But this is only the first part of building the plugin, the second part is to
 make the `fork` in fork server happen.
 
-== Forking, first try
+#subchapter(title: "A first attempt to forking")
+
 
 Let play it simple in a pragmatic way of learning: what happens if we `fork` inside the plugin? Let's make it
 at initialization:
@@ -462,7 +459,8 @@ So, here is where we are:
 - #emoji.checkmark Fork
 - #emoji.quest AFL++
 
-== AFL protocol breakdown
+#subchapter(title: "AFL protocol breakdown")
+
 
 AFL and the target binary communicate through a pipe, consisting of two file
 descriptors, namely 198 and 199. The target binary reads from the file
@@ -537,7 +535,7 @@ In the conclusion you repeat the main result and finalize the discussion of
 your project. Mention the core results and why as well as how your system
 advances the status quo.
 
-= Sources
+#subchapter(title: "Sources")
 
 All the project is available under the following GitHub repository: 
 #link("https://github.com/Maeeen/qemu-semester-project")
