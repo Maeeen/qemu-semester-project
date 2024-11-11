@@ -150,7 +150,7 @@ keep this input and try to mutate it to possibly explore more parts of the
 program. Many mutators exist, and a fuzzer can be as simple as a random
 mutator or as complex as a genetic algorithm.
 
-“*How coverage is obtained?*” you might ask. Many tools out there exist but they
+To get coverage, many tools out there exist but they
 essentially boil down to: at desired instructions in the program, before
 executing, do _something_.
 The _something_ can be as simple as incrementing a counter, or as complex as 
@@ -163,42 +163,51 @@ In the following subsections, we will devise the requirements for the plugin.
 
 #subchapter(title: "Instrumentation under the hood")
 
-Let's take a simple program that reads a character from the standard input
-and either crashes or prints "Try again!" depending on the read character: 
+As a small running example, consider a simple program that reads a character from
+the standard input
+and either crashes or prints "Try again!" depending on the read character as
+depicted in @simple_program_cfg.
 
-#diagram(
-  spacing: (5mm, 10mm),
-  node-stroke: 1pt,
-  edge-stroke: 1pt,
-  node((0, 0), align(left, code("y = (short) random()\nx = get_char()"))),
-  edge((0, 0), "d,l,d", "-|>", code("x < y"), label-sep: .2em), 
-  edge((0, 0), "d,d", "-|>", code("x >= y"), label-side: left),
-  node((0, 2), code("print(\"Try again!\")")),
-  node((-1, 2), [#code("*0x0 = 0") #emoji.explosion]),
-  edge((0, 2), "r", "uu", "l", "-|>")
-)
+#figure(
+  diagram(
+    spacing: (5mm, 10mm),
+    node-stroke: 1pt,
+    edge-stroke: 1pt,
+    node((0, 0), align(left, code("y = (short) random()\nx = get_char()"))),
+    edge((0, 0), "d,l,d", "-|>", code("x < y"), label-sep: .2em), 
+    edge((0, 0), "d,d", "-|>", code("x >= y"), label-side: left),
+    node((0, 2), code("print(\"Try again!\")")),
+    node((-1, 2), [#code("*0x0 = 0") #emoji.explosion]),
+    edge((0, 2), "r", "uu", "l", "-|>")
+  ),
+  caption: [The Control Flow Graph of the running example: reads a character and crashes if it is less than a random number]
+) <simple_program_cfg>
+
 
 Compile-time instrumentation will insert the following code (highlighted in #text(teal, "teal")) at the beginning of
-each basic block:
+each basic block, as depicted in @simple_program_cfg_instru.
 
-#diagram(
-  spacing: (10mm, 5mm),
-  node-stroke: 1pt,
-  edge-stroke: 1pt,
-  node((0, -1), code("map[0]++"), stroke: teal),
-  edge((0, -1), "d", "-|>"),
-  node((0, 0), align(left, code("y = (short) random()\nx = get_char()"))),
-  edge((0, 0), "d,l,d", "-|>", code("x < 97"), label-sep: .2em), 
-  edge((0, 0), "d,d", "-|>", code("x >= 97"), label-side: left),
-  node((-1, 2), code("map[1]++"), stroke: teal),
-  edge((-1, 2), "d", "-|>"),
-  node((-1, 3), [#code("*0x0 = 0") #emoji.explosion]),
-  node((0, 2), code("map[2]++"), stroke: teal),
-  edge((0, 2), "d", "-|>"),
-  node((0, 3), code("print(\"Try again!\")")),
-  edge((0, 3), "r", "uuu", "l", "..|>", crossing: true),
-  edge((0, 3), "rr", "uuuu", "ll", "-|>", stroke: teal, crossing: true),
-)
+#figure(
+  diagram(
+    spacing: (10mm, 5mm),
+    node-stroke: 1pt,
+    edge-stroke: 1pt,
+    node((0, -1), code("map[0]++"), stroke: teal),
+    edge((0, -1), "d", "-|>"),
+    node((0, 0), align(left, code("y = (short) random()\nx = get_char()"))),
+    edge((0, 0), "d,l,d", "-|>", code("x < 97"), label-sep: .2em), 
+    edge((0, 0), "d,d", "-|>", code("x >= 97"), label-side: left),
+    node((-1, 2), code("map[1]++"), stroke: teal),
+    edge((-1, 2), "d", "-|>"),
+    node((-1, 3), [#code("*0x0 = 0") #emoji.explosion]),
+    node((0, 2), code("map[2]++"), stroke: teal),
+    edge((0, 2), "d", "-|>"),
+    node((0, 3), code("print(\"Try again!\")")),
+    edge((0, 3), "r", "uuu", "l", "..|>", crossing: true),
+    edge((0, 3), "rr", "uuuu", "ll", "-|>", stroke: teal, crossing: true),
+  ),
+  caption: [The Control Flow Graph of the running example with instrumentation]
+) <simple_program_cfg_instru>
 
 Therefore upon an execution, the fuzzer will have information on which basic
 block has been inserted.
@@ -216,11 +225,11 @@ where types have been explicitly added for clarity:
 (unsigned short) prev_location = cur_location >> 1;
 ```
 #align(right)[
-  #link("https://lcamtuf.coredump.cx/afl/technical_details.txt#:~:text=cur_location%20%3D%20%3CCOMPILE_TIME_RANDOM%3E%3B%0A%20%20shared_mem%5Bcur_location%20%5E%20prev_location%5D%2B%2B%3B%20%0A%20%20prev_location%20%3D%20cur_location%20%3E%3E%201%3B")[AFL technical details],
+  #link("https://lcamtuf.coredump.cx/afl/technical_details.txt#:~:text=cur_location%20%3D%20%3CCOMPILE_TIME_RANDOM%3E%3B%0A%20%20shared_mem%5Bcur_location%20%5E%20prev_location%5D%2B%2B%3B%20%0A%20%20prev_location%20%3D%20cur_location%20%3E%3E%201%3B")[AFL technical details] #cite(<afl>),
   #link("https://github.com/AFLplusplus/AFLplusplus/blob/d0587a3ac46b1652b1b51b3253c9833d0ea06a13/instrumentation/afl-compiler-rt.o.c#L248-L251", `AFLplusplus/instrumentation/afl-compiler-rt.o.c:248-251`), #link("https://github.com/AFLplusplus/AFLplusplus/blob/d0587a3ac46b1652b1b51b3253c9833d0ea06a13/instrumentation/afl-gcc-pass.so.cc#L217C1-L334C56")[`AFLplusplus/instrumentation/afl-gcc-pass.so.cc:217-334`]
 ]
 
-To get back on our running example, it would look like the following:
+To get back on the example, it would look like the following:
 
 #diagram(
   spacing: (10mm, 5mm),
@@ -258,24 +267,28 @@ just notice a difference in the coverage map and mark it as interesting
 
 #subchapter(title: "Performance")
 
-The general idea as we have described until now is to do the following in a loop:
+The general idea as we have described until now is to do these steps:
 
-#diagram(
-  spacing: (10mm, 10mm),
-  node-stroke: 1pt,
-  edge-stroke: 1pt,
-  node((0, 0), enclose: ((0, -3), (0, 3)), [Fuzzer (AFL++)], stroke: teal, fill: teal.lighten(90%)),
-  edge((0, -3), label: [1. Spawn program], "rrrrrr", "..|>"),
-  node((6, -3), shape: circle, inset: 3pt, h(1pt)),
-  edge((6, -3), label: [OS loads fuzzed binary], "dd", "--|>", label-side: left),
-  edge((0, -1), label: [2. Send input], "rrrrrr", "-|>",  label-side: left),
-  edge((6, 0), label: [Program exits], "d", "--|>", label-side: left),
-  node((6, 1), shape: circle, inset: 3pt, h(1pt)),
-  
-  node((6, 0), align(center)[Program execution \#0], enclose: ((6, -1), (6, 0)),
-    stroke: orange, fill: orange.lighten(90%)),
-  edge((0, 1), label: [3. Get coverage, and exit code], "rrrrrr", "<|-"),
-  edge((0, 2), "r,d,l", "-|>", label: [4. Mutate input], label-side: left),
+1. 
+
+#figure(
+  diagram(
+    spacing: (10mm, 10mm),
+    node-stroke: 1pt,
+    edge-stroke: 1pt,
+    node((0, 0), enclose: ((0, -3), (0, 3)), [Fuzzer (AFL++)], stroke: teal, fill: teal.lighten(90%)),
+    edge((0, -3), label: [1. Spawn program], "rrrrrr", "..|>"),
+    node((6, -3), shape: circle, inset: 3pt, h(1pt)),
+    edge((6, -3), label: [OS loads fuzzed binary], "dd", "--|>", label-side: left),
+    edge((0, -1), label: [2. Send input], "rrrrrr", "-|>",  label-side: left),
+    edge((6, 0), label: [Program exits], "d", "--|>", label-side: left),
+    node((6, 1), shape: circle, inset: 3pt, h(1pt)),
+    
+    node((6, 0), align(center)[Program execution \#0], enclose: ((6, -1), (6, 0)),
+      stroke: orange, fill: orange.lighten(90%)),
+    edge((0, 1), label: [3. Get coverage, and exit code], "rrrrrr", "<|-"),
+    edge((0, 2), "r,d,l", "-|>", label: [4. Mutate input], label-side: left),
+  ), caption: [The fuzzing process]
 )
 
 However, this has its drawbacks: loading the executable is actually a procedure
@@ -288,30 +301,31 @@ from scratch at each iteration, the forked process will be already initialized
 and ready for input.
 Therefore, the actual protocol is as follows:
 
-#diagram(
-  debug: 1,
-  spacing: (7mm, 10mm),
-  node-stroke: 1pt,
-  edge-stroke: 1pt,
-  node((0, 0), enclose: ((0, -3), (0, 5)), [Fuzzer (AFL++)], stroke: teal, fill: teal.lighten(90%)),
-  edge((0, -3), label: [0. Spawn program], "rrrrrrrrrr", "..|>"),
-  node((10, -3), shape: circle, inset: 3pt, h(1pt)),
-  edge((10, -3), label: [OS loads fuzzed binary], "d", "--|>", label-side: right),
-  edge((0, -2), label: [1. Request new process], "rrrrrrrrrr", "-|>", label-side: left),
-  edge((10, -1.5), label: [Fork], "lllll", "--|>", label-side: left, /*snap-to: (auto, <fork-start>)*/),
-  node((5, -0), [Forked fuzzed binary], enclose: ((5, -1.5), (5, 0.5)),
-    stroke: red, fill: red.lighten(90%)),
-  edge((0, -1), label: [2. Send input], "rrrrr", "-|>"),
-  edge((5, 0), label: [Fork exits], "d", "--|>", label-side: left),
-  node((5, 1), shape: circle, inset: 3pt, h(1pt), name: <fork-start>),
-  node((10, -2), align(center)[Fuzzed binary], enclose: ((10, -2), (10, 5)),
-    stroke: orange, fill: orange.lighten(90%)),
-  
-  edge((5, 1), label: [3. Get  coverage, and exit code], "lllll", "-|>"),
-  edge((0, 2), "r,d,l", "-|>", label: [4. Mutate input], label-side: left),
-  edge((0, 4), label: [1. Request new process], "rrrrrrrrrr", "-|>", label-side: left),
-  node((5, 4.5), $dots.v$, stroke: none)
-)
+#figure(
+  diagram(
+    spacing: (7mm, 10mm),
+    node-stroke: 1pt,
+    edge-stroke: 1pt,
+    node((0, 0), enclose: ((0, -3), (0, 5)), [Fuzzer (AFL++)], stroke: teal, fill: teal.lighten(90%)),
+    edge((0, -3), label: [0. Spawn program], "rrrrrrrrrr", "..|>"),
+    node((10, -3), shape: circle, inset: 3pt, h(1pt)),
+    edge((10, -3), label: [OS loads fuzzed binary], "d", "--|>", label-side: right),
+    edge((0, -2), label: [1. Request new process], "rrrrrrrrrr", "-|>", label-side: left),
+    edge((10, -1.5), label: [Fork], "lllll", "--|>", label-side: left, /*snap-to: (auto, <fork-start>)*/),
+    node((5, -0), [Forked fuzzed binary], enclose: ((5, -1.5), (5, 0.5)),
+      stroke: red, fill: red.lighten(90%)),
+    edge((0, -1), label: [2. Send input], "rrrrr", "-|>"),
+    edge((5, 0), label: [Fork exits], "d", "--|>", label-side: left),
+    node((5, 1), shape: circle, inset: 3pt, h(1pt), name: <fork-start>),
+    node((10, -2), align(center)[Fuzzed binary], enclose: ((10, -2), (10, 5)),
+      stroke: orange, fill: orange.lighten(90%)),
+    
+    edge((5, 1), label: [3. Get  coverage, and exit code], "lllll", "-|>"),
+    edge((0, 2), "r,d,l", "-|>", label: [4. Mutate input], label-side: left),
+    edge((0, 4), label: [1. Request new process], "rrrrrrrrrr", "-|>", label-side: left),
+    node((5, 4.5), $dots.v$, stroke: none)
+  ),
+  caption: [The AFL process with a fork server.])
 
 To implement the plugin rather effectively, the `fork` syscall should happen 
 in the plugin, as close as possible before the execution of the fuzzed binary.
@@ -411,6 +425,16 @@ To comply with callbacks, QEMU inserts a `call` instruction to the plugin's
 `tb_exec` callback at the beginning of each TB. Design-wise, it is simple,
 easily maintanable and therefore easy to change and improve!
 
+Note as well that it relies heavily on QEMU's correctness with its internal
+implementation: a possible doubt that we had was that, for performance reason,
+QEMU can chain TBs together, and that `tb_exec` would be called only once for
+the whole chain. However, from tests that we have conducted, it seems that
+the unexpected behavior we have described is not happening and that
+the chaining of TBs is invisible to the plugin. However,
+note that this has been an issue for `qemuafl` until 2018, where `qemuafl` was
+explicitly disabling the chaining of TBs, but has now been fixed.
+#cite(<qemuafl_and_chain>)
+
 But this is only the first part of building the plugin, the second part is to
 make the `fork` in fork server happen.
 
@@ -469,7 +493,6 @@ descriptor.
 // https://github.com/Maeeen/qemu-semester-project/blob/112da69a86eb78f685bb3daefb8b2675996b0057/code/my-plugin/plugin.c#L314
 
 #diagram(
-
   spacing: (7mm, 10mm),
   node-stroke: 1pt,
   edge-stroke: 1pt,
@@ -479,19 +502,20 @@ descriptor.
     stroke: orange, fill: orange.lighten(90%)),
   node((10, -3), shape: circle, inset: 3pt, h(1pt)),
   edge((10, -3), label: [OS loads fuzzed binary], "d", "-|>", label-side: right),
-  edge((10, -2), label: [1. Hi #emoji.wave], "llllllllll", "-|>", label-side: right),
+  edge((10, -2), label: [1. Hi #emoji.hand.wave], "llllllllll", "-|>", label-side: right),
   edge((0, -1.5), label: [2. Fork me a process #emoji.hands], "rrrrrrrrrr", "-|>"),
   edge((10, -1), label: [3. Okay, here it is], "lllll", "-"),
   edge((5, -1), label: [], "lllll", "-|>"),
   node((5, -1), [Forked fuzzed binary], enclose: ((5, -1.5), (5, 0.5)),
     stroke: red, fill: red.lighten(90%)),
   edge((5, 0.5), label: [4. Get coverage], "lllll", "-|>"),
-  edge((5, 0.5), label: [4.], "rrrrr", "-|>"),
+  edge((5, 0.5), label: [4. Retrieve status], "rrrrr", "-|>"),
   edge((10, 1.5), label: [5. Send status], "llllllllll", "-|>"),
   edge((0, 3), label: [6. Fork me a process #emoji.hands], "rrrrrrrrrr", "-|>"),
   node((5, 3.5), $dots.v$, stroke: none),
-
 )
+
+For the current implementation that we have, it is sufficient to follow this protocol.
 
 #TODO
 
@@ -534,7 +558,6 @@ This section is usually 3-5 pages.
 In the conclusion you repeat the main result and finalize the discussion of
 your project. Mention the core results and why as well as how your system
 advances the status quo.
-
 #subchapter(title: "Sources")
 
 All the project is available under the following GitHub repository: 
