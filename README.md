@@ -172,6 +172,25 @@ Note the need for a bootstrapper for `cmplog`. This is because `-c` flag for
 AFL++ takes only a single argument, and the bootstrapper is used to pass the
 plugin path and target path to QEMU.
 
+### Build with your own QEMU
+
+If you want to use your own QEMU, you can specify the path to the QEMU directory
+via Make variable `QEMUPATH`:
+
+```
+make QEMUPATH=$(pwd)/qemu
+```
+
+If you would like to build the plugin with a specific QEMU plugin API version,
+note the following:
+
+- coverage has been tested from QEMU v8.1.1 to v9.1.1 (plugin API version 1, to
+  4)
+- cmplog has been tested only on v9.1.1 (plugin API version 4)
+
+The code will automatically detect the QEMU version and use the correct API if
+it is supported.
+
 ### Building arguments/targets
 
 Preprocessor variables:

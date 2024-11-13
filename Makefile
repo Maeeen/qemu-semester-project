@@ -13,6 +13,10 @@ ifeq ($(DEBUG), 1)
     CFLAGS += -DDEBUG='1'
 endif
 
+ifdef API_VER
+CFLAGS += -DCOMPATIBILITY_VERSION=$(API_VER)
+endif
+
 ROOT_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 
 TARGET_BIN=coverage

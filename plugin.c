@@ -8,6 +8,19 @@
 #include "disas.h"
 #endif
 
+#ifndef COMPATIBILITY_VERSION
+  #define COMPATIBILITY_VERSION QEMU_PLUGIN_VERSION
+#endif
+_Static_assert(COMPATIBILITY_VERSION >= 1 && COMPATIBILITY_VERSION <= 4, "Invalid COMPATIBILITY_VERSION");
+
+#ifdef CMPLOG
+  #if COMPATIBILITY_VERSION <= 2
+  #error "CMPLOG requires COMPATIBILITY_VERSION >= 3, 4 is recommended."
+  #endif
+#endif
+
+QEMU_PLUGIN_EXPORT int qemu_plugin_version = COMPATIBILITY_VERSION;
+
 /// To fork only once.
 static bool is_forked = 0;
 static int has_started = 0;
@@ -28,8 +41,9 @@ void setup_callbacks(qemu_plugin_id_t id);
 /// Setups callbacks to be called when the plugin is loaded.
 void setup_initial_callbacks(qemu_plugin_id_t id);
 
-
+/// Starts the fork server
 void fork_start(qemu_plugin_id_t id) {
+  // Two conditions should be met: we are starting user code and we have not forked yet.
   if (!is_forked && has_started) {
     is_forked = 1;
     // qemu_plugin_reset(id, test);
@@ -66,8 +80,8 @@ void fork_start(qemu_plugin_id_t id) {
     if (likely(afl_is_here())) {
       while(1) {
         #ifdef CMPLOG
-        // between very iteration, disassemble the pending instructions
         #ifndef DISABLE_CMPLOG_CACHE
+        // between every iteration, disassemble the pending instructions
         if (fs_loop(disas_handle_pending)) {
           break;
         }
@@ -102,12 +116,15 @@ void fork_start(qemu_plugin_id_t id) {
   }
 }
 
+/// on syscall, fork.
 void syscall_cb(qemu_plugin_id_t id, unsigned int vcpu_index,
   int64_t num, uint64_t a1, uint64_t a2,
   uint64_t a3, uint64_t a4, uint64_t a5,
   uint64_t a6, uint64_t a7, uint64_t a8) {
   #ifndef FORK_AT_VCPU_INIT
-    fork_start(id);
+    if (unlikely(!is_forked)) {
+      fork_start(id);
+    }
   #endif
 }
 
@@ -179,6 +196,7 @@ void completed_cmp_exec(struct cmplog_cb_data* cb_data) {
 
     size_t req_len = MIN(a->len, cb_data->ops.reg1.size >> 3);
 
+    // Read the register
     for (size_t i = 0; i < req_len; i++) {
       v1 |= (u64) a->data[i] << (i * 8);
     }
@@ -284,8 +302,15 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
     struct qemu_plugin_insn *insn = qemu_plugin_tb_get_insn(tb, i);
 
     // Getting the binary instruction
+    #if COMPATIBILITY_VERSION >= 3
+    // Version ≥3, the data is copied to the buffer.
     unsigned char data[16];
     size_t data_sz = qemu_plugin_insn_data(insn, data, 16);
+    #else
+    // Version ≤2, a pointer is given.
+    unsigned char data = qemu_plugin_insn_data(insn);
+    size_t data_sz = qemu_plugin_insn_size(insn);
+    #endif
 
 
     struct disas_insn_operands ops = get_operands(data, data_sz);
@@ -302,8 +327,6 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   }
   #endif
 }
-
-QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
 /// Setups callbacks to be called whenever the plugin resets after a successful
 /// fork.
@@ -329,7 +352,5 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
   }
   #endif
   setup_initial_callbacks(id);
-  // qemu_plugin_register_vcpu_tb_trans_cb(id, vcpu_tb_trans);
-  // qemu_plugin_register_vcpu_syscall_cb(id, syscall_cb);
   return 0;
 }
