@@ -93,7 +93,10 @@ Most of those are requirements from QEMU itself.
 ### Clone
 
 ```
-git clone --recurse-submodules -j8 git@github.com:Maeeen/qemu-semester-project.git --depth 1
+git clone git@github.com:Maeeen/qemu-semester-project.git
+cd qemu-semester-project
+git submodule init
+git submodule update
 ```
 
 ### Build AFL-fuzz
@@ -109,7 +112,7 @@ make distrib
 cd qemu
 mkdir build
 ../configure --target-list=x86_64-linux-user
-make -j32
+make -j0
 ```
 
 ### Run with coverage only
