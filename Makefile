@@ -7,7 +7,9 @@ CFLAGS= -Wall -g -O3 -fPIC
 RM=rm -f
 DBG=gdb
 
-DEBUG ?= 0
+QEMU_VERSION=v9.1.1
+
+DEBUG ?= 1
 
 ifeq ($(DEBUG), 1)
     CFLAGS += -DDEBUG='1'
@@ -81,6 +83,12 @@ targets/%:
 		echo "No source file found for $*"; \
 		exit 1; \
 	fi
+
+
+
+build-qemu:
+	@echo "Building QEMU $(QEMU_VERSION)"
+	@cd $(QEMUPATH) && (rm -rf build || true) && (git reset --hard || true) && (git clean -Xdf || true) && (git checkout $(QEMU_VERSION) || true) && mkdir build && cd build && ../configure --target-list=x86_64-linux-user && make -j32
 
 run: $(TARGET) plugin.so
 	$(QEMUPATH)/build/qemu-x86_64 -plugin ./plugin.so ./$(TARGET)

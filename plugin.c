@@ -42,7 +42,7 @@ void setup_callbacks(qemu_plugin_id_t id);
 void setup_initial_callbacks(qemu_plugin_id_t id);
 
 /// Starts the fork server
-void fork_start(qemu_plugin_id_t id) {
+void plugin_fork_start(qemu_plugin_id_t id) {
   // Two conditions should be met: we are starting user code and we have not forked yet.
   if (!is_forked && has_started) {
     is_forked = 1;
@@ -123,7 +123,7 @@ void syscall_cb(qemu_plugin_id_t id, unsigned int vcpu_index,
   uint64_t a6, uint64_t a7, uint64_t a8) {
   #ifndef FORK_AT_VCPU_INIT
     if (unlikely(!is_forked)) {
-      fork_start(id);
+      plugin_fork_start(id);
     }
   #endif
 }
@@ -132,7 +132,7 @@ void syscall_cb(qemu_plugin_id_t id, unsigned int vcpu_index,
 void vcpu_init(qemu_plugin_id_t id, unsigned int cpu_index) {
   #ifdef FORK_AT_VCPU_INIT
   has_started = 1;
-  fork_start(id);
+  plugin_fork_start(id);
   #endif
 }
 
