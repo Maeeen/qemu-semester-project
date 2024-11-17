@@ -22,10 +22,10 @@ endif
 ROOT_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 
 TARGET_BIN=coverage
-TARGET=targets/$(TARGET_BIN)
+TARGET=test-targets/$(TARGET_BIN)
 TARGET_FULLPATH:=$(ROOT_DIR)/$(TARGET)
 
-FS_RUN=targets/fs-c
+FS_RUN=test-targets/fs-c
 
 QEMUPATH=$(ROOT_DIR)/qemu
 AFLPATH=$(ROOT_DIR)/AFLplusplus
@@ -44,9 +44,9 @@ clean:
 	find ./ -type f -name "*.o" -delete
 	find ./ -type f -name "*.so" -delete
 	# Delete all executables
-	find ./targets -type f ! -name "*.*" -delete
+	find ./test-targets -type f ! -name "*.*" -delete
 	# Delete all object files
-	find ./targets -type f -name "*.o" -delete
+	find ./test-targets -type f -name "*.o" -delete
 	rm cmplog-bootstrapper || true
 	rm -rf fuzz || true
 
@@ -61,23 +61,23 @@ cmplog.o: afl.o fs.o disas.o afl-cmplog.o
 cmplog-bootstrapper: cmplog-bootstrapper.c cmplog.so
 	$(CC) -g -O3 -DQEMU='"$(QEMUPATH)/build/qemu-x86_64"' -DQEMU_PLUGIN='"$(ROOT_DIR)/cmplog.so"' -DTARGET='"$(TARGET_FULLPATH)"' -o $@ cmplog-bootstrapper.c
 
-targets/coverage:
-	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ targets/coverage.c -fno-stack-protector
+test-targets/coverage:
+	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ test-targets/coverage.c -fno-stack-protector
 
-targets/coverage-long:
-	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -g -nostdlib -o $@ targets/coverage-long.c -fno-stack-protector
+test-targets/coverage-long:
+	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -g -nostdlib -o $@ test-targets/coverage-long.c -fno-stack-protector
 
-targets/dead:
-	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ targets/dead.c
+test-targets/dead:
+	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ test-targets/dead.c
 
-# Targets
-# $(ASM) -f elf64 -DTARGET='"./$(TARGET)"' -o $@.o targets/$*.asm;
-targets/%:
-	@if [ -f targets/$*.c ]; then \
-		$(CC) $(CFLAGS) -DTARGET='"$(TARGET_FULLPATH)"' -O0 -o $@ targets/$*.c; \
-	elif [ -f targets/$*.asm ]; then \
+# test-targets
+# $(ASM) -f elf64 -DTARGET='"./$(TARGET)"' -o $@.o test-targets/$*.asm;
+test-targets/%:
+	@if [ -f test-targets/$*.c ]; then \
+		$(CC) $(CFLAGS) -DTARGET='"$(TARGET_FULLPATH)"' -O0 -o $@ test-targets/$*.c; \
+	elif [ -f test-targets/$*.asm ]; then \
 		echo "Target is $(TARGET_FULLPATH)"; \
-		$(ASM) -f elf64 -DTARGET='"$(TARGET_FULLPATH)"' -o $@.o targets/$*.asm; \
+		$(ASM) -f elf64 -DTARGET='"$(TARGET_FULLPATH)"' -o $@.o test-targets/$*.asm; \
 		$(LD) -o $@ $@.o; \
 	else \
 		echo "No source file found for $*"; \
