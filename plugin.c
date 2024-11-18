@@ -300,7 +300,34 @@ void insn_exec(unsigned int vcpu_index, void* data) {
 }
 #endif
 
+static const char* hi = "hi world!\n";
+
+QEMU_INLINE_CALLBACK(some_callback,
+  __asm__("nop");
+  __asm__("nop");
+  __asm__("nop");
+  __asm__("nop");
+  __asm__("nop");
+  __asm__("nop");
+  __asm__("nop");
+  __asm__("add $0x1, %rax");
+  __asm__("add $0x1, %rax");
+  __asm__("add $0x1, %rax");
+  __asm__("add $0x1, %rax");
+  __asm__("add $0x1, %rax");
+  __asm__("add $0x1, %rax");
+  __asm__("add $0x1, %rax");
+  __asm__("add $0x1, %rax");
+  __asm__("add $0x1, %rax");
+  __asm__("add $0x1, %rax");
+  __asm__("add $0x1, %rax");
+  printf(hi);
+)
+
 void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
+  struct qemu_plugin_inlined_callback cb = QEMU_INLINE_CALLBACK_REF(some_callback);
+  qemu_plugin_register_vcpu_tb_exec_cb_inlined(tb,cb);
+  return;
   #ifdef INSTRUMENT_AFTER_START
   if (unlikely(has_started == 0)) {
     if (qemu_plugin_start_code() == qemu_plugin_tb_vaddr(tb)) {

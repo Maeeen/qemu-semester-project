@@ -9,7 +9,7 @@ DBG=gdb
 
 QEMU_VERSION=origin/master
 
-DEBUG ?= 0
+DEBUG ?= 1
 
 ifeq ($(DEBUG), 1)
     CFLAGS += -DDEBUG='1'
