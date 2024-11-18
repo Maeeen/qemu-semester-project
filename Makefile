@@ -36,7 +36,7 @@ CFLAGS += $(shell pkg-config --cflags capstone)
 plugin.so: CFLAGS += -Werror
 
 .SECONDARY:
-.PHONY: clean
+.PHONY: clean targets/*
 
 # plugin so
 # then no dots
@@ -69,6 +69,10 @@ test-targets/coverage-long:
 
 test-targets/dead:
 	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ test-targets/dead.c
+
+targets/libpng:
+	@echo "Building libpng"
+	@cd ./targets/libpng && (([ -f "./libpng_read_fuzzer" ] && echo "Already built") || ./prepare.sh)
 
 # test-targets
 # $(ASM) -f elf64 -DTARGET='"./$(TARGET)"' -o $@.o test-targets/$*.asm;
@@ -117,6 +121,20 @@ fuzz: clean $(TARGET) plugin.so
 	mkdir afl-in afl-out; \
 	echo prout > $(ROOT_DIR)/fuzz/afl-in/seed; \
 	AFL_SKIP_BIN_CHECK=1 $(AFLPATH)/afl-fuzz -i ./afl-in -o ./afl-out -- ../qemu/build/qemu-x86_64 -plugin ../plugin.so $(TARGET_FULLPATH)
+
+fuzz-libpng: clean plugin.so targets/libpng
+	@rm -rf fuzz || true
+	@mkdir fuzz && cd fuzz; \
+	mkdir afl-in afl-out; \
+	cp -r ../targets/libpng/corpus/* afl-in; \
+	AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 AFL_SKIP_CPUFREQ=1 AFL_SKIP_BIN_CHECK=1 $(AFLPATH)/afl-fuzz -i ./afl-in -o ./afl-out -- ../qemu/build/qemu-x86_64 -plugin ../plugin.so ../targets/libpng/libpng_read_fuzzer @@
+
+fuzz-libpng-ref: clean plugin.so targets/libpng
+	@rm -rf fuzz || true
+	@mkdir fuzz && cd fuzz; \
+	mkdir afl-in afl-out; \
+	cp -r ../targets/libpng/corpus/* afl-in; \
+	AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 AFL_SKIP_CPUFREQ=1 AFL_SKIP_BIN_CHECK=1 $(AFLPATH)/afl-fuzz -Q -i ./afl-in -o ./afl-out -- ../targets/libpng/libpng_read_fuzzer @@
 
 fuzz-cmplog: clean $(TARGET) cmplog.so cmplog-bootstrapper
 	@rm -rf fuzz || true
