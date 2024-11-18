@@ -9,6 +9,7 @@
 #endif
 
 #define ENABLE_TSR
+#define INLINE_COVERAGE
 
 #ifndef COMPATIBILITY_VERSION
   #define COMPATIBILITY_VERSION QEMU_PLUGIN_VERSION
@@ -42,6 +43,13 @@ void setup_callbacks(qemu_plugin_id_t id);
 
 /// Setups callbacks to be called when the plugin is loaded.
 void setup_initial_callbacks(qemu_plugin_id_t id);
+
+// ---- Inline callback ----
+#ifdef INLINE_COVERAGE
+#ifndef QEMU_PLUGIN_MAE_EXTENSIONS
+#error "This plugin requires QEMU to be compiled with the patches provided in `qemu-proposal-patches`"
+#endif
+#endif
 
 // ---- TSR related ----
 #ifdef ENABLE_TSR
@@ -300,34 +308,30 @@ void insn_exec(unsigned int vcpu_index, void* data) {
 }
 #endif
 
-static const char* hi = "hi world!\n";
+// static const char* hi = "hi world!\n";
 
-QEMU_INLINE_CALLBACK(some_callback,
-  __asm__("nop");
-  __asm__("nop");
-  __asm__("nop");
-  __asm__("nop");
-  __asm__("nop");
-  __asm__("nop");
-  __asm__("nop");
-  __asm__("add $0x1, %rax");
-  __asm__("add $0x1, %rax");
-  __asm__("add $0x1, %rax");
-  __asm__("add $0x1, %rax");
-  __asm__("add $0x1, %rax");
-  __asm__("add $0x1, %rax");
-  __asm__("add $0x1, %rax");
-  __asm__("add $0x1, %rax");
-  __asm__("add $0x1, %rax");
-  __asm__("add $0x1, %rax");
-  __asm__("add $0x1, %rax");
-  printf(hi);
-)
+// QEMU_INLINE_CALLBACK(some_callback,
+//   __asm__(
+//     "mov $1234567, %%rax \n\t"        // syscall: write
+//     "mov $1, %%rdi \n\t"        // file descriptor: stdout
+//     "sub $8, %%rsp \n\t"        // allocate space on the stack
+//     "movb $'h', (%%rsp) \n\t"   // write 'h' to the stack
+//     "movb $'i', 1(%%rsp) \n\t"  // write 'i' to the stack
+//     "mov %%rsp, %%rsi \n\t"     // address of the string
+//     "mov $2, %%rdx \n\t"        // length of the string
+//     "syscall \n\t"              // invoke syscall
+//     "add $8, %%rsp \n\t"        // restore stack pointer
+//     "int $0x03"
+//     :
+//     : // No input operands
+//     : "rax", "rdi", "rsi", "rdx", "memory" // Clobbered registers
+//   );
+// )
+
+
+unsigned char callback_asm[39];
 
 void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
-  struct qemu_plugin_inlined_callback cb = QEMU_INLINE_CALLBACK_REF(some_callback);
-  qemu_plugin_register_vcpu_tb_exec_cb_inlined(tb,cb);
-  return;
   #ifdef INSTRUMENT_AFTER_START
   if (unlikely(has_started == 0)) {
     if (qemu_plugin_start_code() == qemu_plugin_tb_vaddr(tb)) {
@@ -355,7 +359,18 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   // Virtual address of the first instruction
   uint64_t vaddr = qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0));
   // Register callback
+
+  #ifdef INLINE_COVERAGE
+  generate_assembly_bytes(callback_asm, vaddr);
+  struct qemu_plugin_inlined_callback cb = ((struct qemu_plugin_inlined_callback) {
+    .start = callback_asm,
+    .end = &((char*) callback_asm)[39]
+  });
+  qemu_plugin_register_vcpu_tb_exec_cb_inlined(tb,cb);
+  return;
+  #else
   qemu_plugin_register_vcpu_tb_exec_cb(tb, tb_exec, QEMU_PLUGIN_CB_NO_REGS, (void*) vaddr);
+  #endif
 
   #ifdef ENABLE_TSR
     // Forward to parent the request
