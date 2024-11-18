@@ -68,7 +68,7 @@ failed_handshake:
   return -1;
 }
 
-int fs_loop(void(*possible_inter)()) {
+int fs_loop(qemu_plugin_id_t id, void(*possible_inter)(qemu_plugin_id_t id)) {
   u32 dummy;
   if (afl_read(&dummy)) {
     pf("Failed to read start message.\n");
@@ -86,7 +86,7 @@ int fs_loop(void(*possible_inter)()) {
     exit(-1);
   }
   afl_write(child);
-  if (possible_inter) possible_inter();
+  if (possible_inter) possible_inter(id);
   int status;
   if (waitpid(child, &status, 0) < 0) {
     perror("waitpid");

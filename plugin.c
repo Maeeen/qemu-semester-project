@@ -8,6 +8,8 @@
 #include "disas.h"
 #endif
 
+#define ENABLE_TSR
+
 #ifndef COMPATIBILITY_VERSION
   #define COMPATIBILITY_VERSION QEMU_PLUGIN_VERSION
 #endif
@@ -40,6 +42,42 @@ void setup_callbacks(qemu_plugin_id_t id);
 
 /// Setups callbacks to be called when the plugin is loaded.
 void setup_initial_callbacks(qemu_plugin_id_t id);
+
+// ---- TSR related ----
+#ifdef ENABLE_TSR
+
+#ifndef QEMU_PLUGIN_MAE_EXTENSIONS
+  #error "This plugin requires QEMU to be compiled with the patches provided in `qemu-proposal-patches`"
+#endif
+
+/// Translation requests
+int TSR[2] = { 0 };
+/// Handle TSR
+void handle_tsr(qemu_plugin_id_t id) {
+  uint64_t vaddr;
+  while (1) {
+    if (read(TSR[0], &vaddr, sizeof(uint64_t)) == -1) {
+      if (errno == EAGAIN) {
+        return;
+      }
+    }
+    if (qemu_plugin_prefetch(id, vaddr)) {
+      pf("Successful prefetch\n");
+    }
+  }
+}
+#endif
+
+void inter_fork(qemu_plugin_id_t id) {
+  #ifdef ENABLE_TSR
+    handle_tsr(id);
+  #endif
+  #ifdef CMPLOG
+  #ifndef DISABLE_CMPLOG_CACHE
+    disas_handle_pending();
+  #endif
+  #endif
+}
 
 /// Starts the fork server
 void plugin_fork_start(qemu_plugin_id_t id) {
@@ -79,24 +117,9 @@ void plugin_fork_start(qemu_plugin_id_t id) {
 
     if (likely(afl_is_here())) {
       while(1) {
-        #ifdef CMPLOG
-        #ifndef DISABLE_CMPLOG_CACHE
-        // between every iteration, disassemble the pending instructions
-        if (fs_loop(disas_handle_pending)) {
+        if (fs_loop(id, inter_fork)) {
           break;
         }
-        #else
-        if (fs_loop(NULL)) {
-          break;
-        }
-        #endif
-
-        #else
-        if (fs_loop(NULL)) {
-          break;
-        }
-        #endif
-
       }
     } else {
       // Mainly for debugging.
@@ -104,7 +127,10 @@ void plugin_fork_start(qemu_plugin_id_t id) {
         #include <sys/types.h>
         #include <sys/wait.h>
         #ifdef CMPLOG
-        disas_handle_pending();
+          disas_handle_pending();
+        #endif
+        #ifdef ENABLE_TSR
+          handle_tsr(id);
         #endif
         pf("Press a key to launch a new instance.\n");
         getchar();
@@ -286,45 +312,59 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   #else
   has_started = 1;
   #endif
+
+  // If we did not fork, there is no point to instrument the code.
   if (unlikely(!is_forked)) {
     return;
   }
+
+  // If there is no instructions, abort
   if (unlikely(qemu_plugin_tb_n_insns(tb) == 0)) return;
+
   // if the void* pointer is not enough to store the hardware address
   // give up.
   _Static_assert(sizeof(void*) >= sizeof(size_t), "Invalid architecture.");
+
+  // Virtual address of the first instruction
   uint64_t vaddr = qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0));
+  // Register callback
   qemu_plugin_register_vcpu_tb_exec_cb(tb, tb_exec, QEMU_PLUGIN_CB_NO_REGS, (void*) vaddr);
 
+  #ifdef ENABLE_TSR
+    // Forward to parent the request
+    write(TSR[1], &vaddr, sizeof(uint64_t));
+  #endif
+
+  // In case of cmplog
   #ifdef CMPLOG
-  size_t n_insn = qemu_plugin_tb_n_insns(tb);
-  for(size_t i = 0; i < n_insn; i++) {
-    struct qemu_plugin_insn *insn = qemu_plugin_tb_get_insn(tb, i);
+    size_t n_insn = qemu_plugin_tb_n_insns(tb);
+    for(size_t i = 0; i < n_insn; i++) {
+      struct qemu_plugin_insn *insn = qemu_plugin_tb_get_insn(tb, i);
 
-    // Getting the binary instruction
-    #if COMPATIBILITY_VERSION >= 3
-    // Version ≥3, the data is copied to the buffer.
-    unsigned char data[16];
-    size_t data_sz = qemu_plugin_insn_data(insn, data, 16);
-    #else
-    // Version ≤2, a pointer is given.
-    unsigned char data = qemu_plugin_insn_data(insn);
-    size_t data_sz = qemu_plugin_insn_size(insn);
-    #endif
+      // Getting the binary instruction
+      #if COMPATIBILITY_VERSION >= 3
+      // Version ≥3, the data is copied to the buffer.
+      unsigned char data[16];
+      size_t data_sz = qemu_plugin_insn_data(insn, data, 16);
+      #else
+      // Version ≤2, a pointer is given.
+      unsigned char data = qemu_plugin_insn_data(insn);
+      size_t data_sz = qemu_plugin_insn_size(insn);
+      #endif
 
 
-    struct disas_insn_operands ops = get_operands(data, data_sz);
-    if (ops.should_instrument) {
-      struct cmplog_cb_data *cb_data = calloc(1, sizeof(struct cmplog_cb_data));
-      cb_data->location = qemu_plugin_insn_vaddr(insn);
-      cb_data->ops = ops;
-      if (ops.mem_accesses) {
-        qemu_plugin_register_vcpu_mem_cb(insn, insn_mem, QEMU_PLUGIN_CB_R_REGS, QEMU_PLUGIN_MEM_R, (void*) cb_data);
-      } else {
-        qemu_plugin_register_vcpu_insn_exec_cb(insn, insn_exec, QEMU_PLUGIN_CB_R_REGS, (void*) cb_data);
+      struct disas_insn_operands ops = get_operands(data, data_sz);
+      if (ops.should_instrument) {
+        struct cmplog_cb_data *cb_data = calloc(1, sizeof(struct cmplog_cb_data));
+        cb_data->location = qemu_plugin_insn_vaddr(insn);
+        cb_data->ops = ops;
+        if (ops.mem_accesses) {
+          qemu_plugin_register_vcpu_mem_cb(insn, insn_mem, QEMU_PLUGIN_CB_R_REGS, QEMU_PLUGIN_MEM_R, (void*) cb_data);
+        } else {
+          qemu_plugin_register_vcpu_insn_exec_cb(insn, insn_exec, QEMU_PLUGIN_CB_R_REGS, (void*) cb_data);
+        }
       }
     }
-  }
   #endif
 }
 
@@ -344,13 +384,35 @@ void setup_initial_callbacks(qemu_plugin_id_t id) {
   #endif
 }
 
+#ifdef ENABLE_TSR
+void tsr_setup() {
+  if (pipe(TSR)) {
+    pf("Error creating disassembly pipe.\n");
+    return;
+  }
+  if (fcntl(TSR[0], F_SETFL, O_NONBLOCK)) {
+    pf("Error setting non-blocking mode on disassembly pipe.\n");
+    return;
+  }
+  if (fcntl(TSR[1], F_SETFL, O_NONBLOCK)) {
+    pf("Error setting non-blocking mode on disassembly pipe.\n");
+    return;
+  }
+}
+#endif
+
 QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info, int argc, char **argv) {
   #ifdef CMPLOG
-  if (disas_init(info->target_name)) {
-    pf("Error initializing the disassembler.");
-    exit(-1);
-  }
+    if (disas_init(info->target_name)) {
+      pf("Error initializing the disassembler.");
+      exit(-1);
+    }
   #endif
+
+  #ifdef ENABLE_TSR
+    tsr_setup();
+  #endif
+
   setup_initial_callbacks(id);
   return 0;
 }

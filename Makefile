@@ -7,9 +7,9 @@ CFLAGS= -Wall -g -O3 -fPIC
 RM=rm -f
 DBG=gdb
 
-QEMU_VERSION=v9.1.1
+QEMU_VERSION=origin/master
 
-DEBUG ?= 1
+DEBUG ?= 0
 
 ifeq ($(DEBUG), 1)
     CFLAGS += -DDEBUG='1'
@@ -59,6 +59,7 @@ cmplog.so: cmplog.o afl.o fs.o afl-cmplog.o disas.o
 cmplog.o: afl.o fs.o disas.o afl-cmplog.o
 	$(CC) -DCMPLOG='1' $(CFLAGS) plugin.c $^ -c -o $@
 cmplog-bootstrapper: cmplog-bootstrapper.c cmplog.so
+	@echo "Building cmplog-bootstrapper for $(TARGET_FULLPATH)"
 	$(CC) -g -O3 -DQEMU='"$(QEMUPATH)/build/qemu-x86_64"' -DQEMU_PLUGIN='"$(ROOT_DIR)/cmplog.so"' -DTARGET='"$(TARGET_FULLPATH)"' -o $@ cmplog-bootstrapper.c
 
 test-targets/coverage:
@@ -92,7 +93,11 @@ test-targets/%:
 
 build-qemu:
 	@echo "Building QEMU $(QEMU_VERSION)"
-	@cd $(QEMUPATH) && (rm -rf build || true) && (git reset --hard || true) && (git clean -Xdf || true) && (git checkout $(QEMU_VERSION) || true) && mkdir build && cd build && ../configure --target-list=x86_64-linux-user && make -j32
+	@cd $(QEMUPATH) && (rm -rf build || true) && (git reset --hard || true) && (git clean -Xdf || true) && (git reset --hard $(QEMU_VERSION) || true) && mkdir build && cd build && ../configure --target-list=x86_64-linux-user && make -j32
+
+build-qemu-patched:
+	@echo "Building QEMU $(QEMU_VERSION)"
+	@cd $(QEMUPATH) && (rm -rf build || true) && (git reset --hard || true) && (git clean -Xdf || true) && (git reset --hard $(QEMU_VERSION) || true) && (git apply ../qemu-proposal-patches/*.patch) && mkdir build && cd build && ../configure --target-list=x86_64-linux-user && make -j32
 
 run: $(TARGET) plugin.so
 	$(QEMUPATH)/build/qemu-x86_64 -plugin ./plugin.so ./$(TARGET)
@@ -120,7 +125,7 @@ fuzz: clean $(TARGET) plugin.so
 	@mkdir fuzz && cd fuzz; \
 	mkdir afl-in afl-out; \
 	echo prout > $(ROOT_DIR)/fuzz/afl-in/seed; \
-	AFL_SKIP_BIN_CHECK=1 $(AFLPATH)/afl-fuzz -i ./afl-in -o ./afl-out -- ../qemu/build/qemu-x86_64 -plugin ../plugin.so $(TARGET_FULLPATH)
+	AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 AFL_SKIP_CPUFREQ=1 AFL_SKIP_BIN_CHECK=1 $(AFLPATH)/afl-fuzz -i ./afl-in -o ./afl-out -- ../qemu/build/qemu-x86_64 -plugin ../plugin.so $(TARGET_FULLPATH)
 
 fuzz-libpng: clean plugin.so targets/libpng
 	@rm -rf fuzz || true
@@ -128,6 +133,14 @@ fuzz-libpng: clean plugin.so targets/libpng
 	mkdir afl-in afl-out; \
 	cp -r ../targets/libpng/corpus/* afl-in; \
 	AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 AFL_SKIP_CPUFREQ=1 AFL_SKIP_BIN_CHECK=1 $(AFLPATH)/afl-fuzz -i ./afl-in -o ./afl-out -- ../qemu/build/qemu-x86_64 -plugin ../plugin.so ../targets/libpng/libpng_read_fuzzer @@
+
+fuzz-libpng-cmplog: TARGET_FULLPATH=$(ROOT_DIR)/targets/libpng/libpng_read_fuzzer
+fuzz-libpng-cmplog: clean cmplog.so plugin.so cmplog-bootstrapper targets/libpng
+	@rm -rf fuzz || true
+	@mkdir fuzz && cd fuzz; \
+	mkdir afl-in afl-out; \
+	cp -r ../targets/libpng/corpus/* afl-in; \
+	AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 AFL_SKIP_CPUFREQ=1 AFL_SKIP_BIN_CHECK=1 $(AFLPATH)/afl-fuzz -i ./afl-in -o ./afl-out -c ../cmplog-bootstrapper -- ../qemu/build/qemu-x86_64 -plugin ../cmplog.so ../targets/libpng/libpng_read_fuzzer @@
 
 fuzz-libpng-ref: clean plugin.so targets/libpng
 	@rm -rf fuzz || true
@@ -141,4 +154,4 @@ fuzz-cmplog: clean $(TARGET) cmplog.so cmplog-bootstrapper
 	@mkdir fuzz && cd fuzz; \
 	mkdir afl-in afl-out; \
 	echo prout > $(ROOT_DIR)/fuzz/afl-in/seed; \
-	AFL_SKIP_BIN_CHECK=1 $(AFLPATH)/afl-fuzz -i ./afl-in -o ./afl-out -c ../cmplog-bootstrapper -- ../qemu/build/qemu-x86_64 -plugin ../plugin.so $(TARGET_FULLPATH)
+	AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 AFL_SKIP_CPUFREQ=1 AFL_SKIP_BIN_CHECK=1 $(AFLPATH)/afl-fuzz -i ./afl-in -o ./afl-out -c ../cmplog-bootstrapper -- ../qemu/build/qemu-x86_64 -plugin ../plugin.so $(TARGET_FULLPATH)
