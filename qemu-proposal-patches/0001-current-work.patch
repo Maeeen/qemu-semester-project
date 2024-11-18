@@ -1,0 +1,375 @@
+From 22a8579fb588f1f11f3a9edfe9cd8f6d2b1c1633 Mon Sep 17 00:00:00 2001
+From: Marwan Azuz <marwanazuz+cinnabyte@gmail.com>
+Date: Mon, 18 Nov 2024 17:02:31 +0100
+Subject: [PATCH 1/2] current work
+
+---
+ accel/tcg/cpu-exec.c         | 46 +++++++++++++++++++++++++++++++++
+ accel/tcg/plugin-gen.c       | 13 ++++++++++
+ include/exec/cpu-common.h    |  2 ++
+ include/qemu/plugin.h        |  2 ++
+ include/qemu/qemu-plugin.h   | 50 +++++++++++++++++++++++++++++++++++-
+ include/tcg/tcg-opc.h        |  1 +
+ plugins/api.c                | 15 +++++++++++
+ plugins/core.c               |  8 ++++++
+ plugins/plugin.h             |  4 +++
+ plugins/qemu-plugins.symbols |  2 ++
+ tcg/tcg.c                    |  5 ++++
+ tcg/tci/tcg-target.c.inc     |  6 +++++
+ 12 files changed, 153 insertions(+), 1 deletion(-)
+
+diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
+index 8163295f34..eff3eca231 100644
+--- a/accel/tcg/cpu-exec.c
++++ b/accel/tcg/cpu-exec.c
+@@ -1102,3 +1102,49 @@ void tcg_exec_unrealizefn(CPUState *cpu)
+     tlb_destroy(cpu);
+     g_free_rcu(cpu->tb_jmp_cache, rcu);
+ }
++
++int cpu_prefetch_tb(CPUState *cpu, vaddr pc) {
++    TranslationBlock *tb;
++    vaddr _unused;
++    uint64_t cs_base;
++    uint32_t flags, cflags;
++
++    cpu_get_tb_cpu_state(cpu_env(cpu), &_unused, &cs_base, &flags);
++
++    /*
++        * When requested, use an exact setting for cflags for the next
++        * execution.  This is used for icount, precise smc, and stop-
++        * after-access watchpoints.  Since this request should never
++        * have CF_INVALID set, -1 is a convenient invalid value that
++        * does not require tcg headers for cpu_common_reset.
++        */
++    cflags = cpu->cflags_next_tb;
++    if (cflags == -1) {
++        cflags = curr_cflags(cpu);
++    } else {
++        cpu->cflags_next_tb = -1;
++    }
++    
++    tb = tb_lookup(cpu, pc, cs_base, flags, cflags);
++    if (tb == NULL) {
++        uint32_t h;
++        CPUJumpCache *jc;
++
++
++        mmap_lock();
++        tb = tb_gen_code(cpu, pc, cs_base, flags, cflags);
++        mmap_unlock();
++
++        printf("Pre-translated TB at %p\n", tb->tc.ptr);
++        /*
++            * We add the TB in the virtual pc hash table
++            * for the fast lookup
++            */
++        h = tb_jmp_cache_hash_func(pc);
++        jc = cpu->tb_jmp_cache;
++        jc->array[h].pc = pc;
++        qatomic_set(&jc->array[h].tb, tb);
++        return 1;
++    }
++    return 0;
++}
+\ No newline at end of file
+diff --git a/accel/tcg/plugin-gen.c b/accel/tcg/plugin-gen.c
+index 0f47bfbb48..6b4bca999e 100644
+--- a/accel/tcg/plugin-gen.c
++++ b/accel/tcg/plugin-gen.c
+@@ -212,6 +212,11 @@ static void gen_mem_cb(struct qemu_plugin_regular_cb *cb,
+     tcg_temp_free_i32(cpu_index);
+ }
+ 
++static void gen_inline_later_cb(qemu_plugin_inlined_callback cb)
++{
++    tcg_gen_op2(INDEX_op_plugin_inlined_cb, cb.start, cb.end);
++}
++
+ static void inject_cb(struct qemu_plugin_dyn_cb *cb)
+ 
+ {
+@@ -228,6 +233,8 @@ static void inject_cb(struct qemu_plugin_dyn_cb *cb)
+     case PLUGIN_CB_INLINE_STORE_U64:
+         gen_inline_store_u64_cb(&cb->inline_insn);
+         break;
++    case PUBLIC_CB_ARBITRARY_INLINE:
++        gen_inline_later_cb(&cb->inlined);
+     default:
+         g_assert_not_reached();
+     }
+@@ -368,6 +375,12 @@ static void plugin_gen_inject(struct qemu_plugin_tb *plugin_tb)
+             break;
+         }
+ 
++        case INDEX_op_plugin_inlined_cb:
++        {
++
++        }
++
++
+         default:
+             /* plugins don't care about any other ops */
+             break;
+diff --git a/include/exec/cpu-common.h b/include/exec/cpu-common.h
+index 638dc806a5..c3ab34e6b5 100644
+--- a/include/exec/cpu-common.h
++++ b/include/exec/cpu-common.h
+@@ -227,6 +227,8 @@ G_NORETURN void cpu_loop_exit_restore(CPUState *cpu, uintptr_t pc);
+ /* accel/tcg/cpu-exec.c */
+ int cpu_exec(CPUState *cpu);
+ 
++int cpu_prefetch_tb(CPUState *cpu, vaddr pc);
++
+ /**
+  * env_archcpu(env)
+  * @env: The architecture environment
+diff --git a/include/qemu/plugin.h b/include/qemu/plugin.h
+index 9726a9ebf3..1215618658 100644
+--- a/include/qemu/plugin.h
++++ b/include/qemu/plugin.h
+@@ -72,6 +72,7 @@ enum plugin_dyn_cb_type {
+     PLUGIN_CB_MEM_REGULAR,
+     PLUGIN_CB_INLINE_ADD_U64,
+     PLUGIN_CB_INLINE_STORE_U64,
++    PUBLIC_CB_ARBITRARY_INLINE,
+ };
+ 
+ struct qemu_plugin_regular_cb {
+@@ -107,6 +108,7 @@ struct qemu_plugin_dyn_cb {
+         struct qemu_plugin_regular_cb regular;
+         struct qemu_plugin_conditional_cb cond;
+         struct qemu_plugin_inline_cb inline_insn;
++        struct qemu_plugin_inlined_callback inlined;
+     };
+ };
+ 
+diff --git a/include/qemu/qemu-plugin.h b/include/qemu/qemu-plugin.h
+index 622c9a0232..a0136cfe0a 100644
+--- a/include/qemu/qemu-plugin.h
++++ b/include/qemu/qemu-plugin.h
+@@ -70,7 +70,30 @@ typedef uint64_t qemu_plugin_id_t;
+ extern QEMU_PLUGIN_EXPORT int qemu_plugin_version;
+ 
+ #define QEMU_PLUGIN_VERSION 4
+-
++#define QEMU_PLUGIN_MAE_EXTENSIONS
++
++#define QEMU_INLINE_CALLBACK(name, body) \
++    extern void* name##_start; \
++    extern void* name##_end; \
++    static void __attribute__((unused)) name() { \
++        __asm__(".global " #name "_start\n" #name "_start:"); \
++        body \
++        __asm__(".global " #name "_end\n" #name "_end:"); \
++    }
++
++
++// Define a structure to hold callback bounds
++typedef struct qemu_plugin_inlined_callback {
++    void* start;
++    void* end;
++} qemu_plugin_inlined_callback;
++
++// Create a reference to the inline callback
++#define QEMU_INLINE_CALLBACK_REF(name) \
++    { \
++        .start = (void*)&name##_start, \
++        .end = (void*)&name##_end, \
++    }
+ /**
+  * struct qemu_info_t - system information for plugins
+  *
+@@ -100,6 +123,16 @@ typedef struct qemu_info_t {
+     };
+ } qemu_info_t;
+ 
++#ifdef QEMU_PLUGIN_MAE_EXTENSIONS
++/**
++ * qemu_plugin_prefetch() - Pretranslate instructions
++ * @id: this plugin's opaque ID
++ * @vaddr: virtual address to prefetch
++ */
++QEMU_PLUGIN_EXPORT int qemu_plugin_prefetch(qemu_plugin_id_t id,
++                                            uint64_t vaddr);
++#endif
++
+ /**
+  * qemu_plugin_install() - Install a plugin
+  * @id: this plugin's opaque ID
+@@ -237,6 +270,21 @@ struct qemu_plugin_insn;
+ /** struct qemu_plugin_scoreboard - Opaque handle for a scoreboard */
+ struct qemu_plugin_scoreboard;
+ 
++#ifdef QEMU_PLUGIN_MAE_EXTENSIONS
++/**
++ * qemu_plugin_register_vcpu_tb_exec_cb_inlined() - register execution callback
++ * @tb: the opaque qemu_plugin_tb handle for the translation
++ * @cb: callback function
++ * @flags: does the plugin read or write the CPU's registers?
++ * @userdata: any plugin data to pass to the @cb?
++ *
++ * The @cb function is called every time a translated unit executes.
++ */
++QEMU_PLUGIN_EXPORT
++void qemu_plugin_register_vcpu_tb_exec_cb_inlined(struct qemu_plugin_tb *tb,
++                                          qemu_plugin_inlined_callback cb);
++#endif
++
+ /**
+  * typedef qemu_plugin_u64 - uint64_t member of an entry in a scoreboard
+  *
+diff --git a/include/tcg/tcg-opc.h b/include/tcg/tcg-opc.h
+index 546eb49c11..98f7cedd8c 100644
+--- a/include/tcg/tcg-opc.h
++++ b/include/tcg/tcg-opc.h
+@@ -199,6 +199,7 @@ DEF(goto_ptr, 0, 1, 0, TCG_OPF_BB_EXIT | TCG_OPF_BB_END)
+ 
+ DEF(plugin_cb, 0, 0, 1, TCG_OPF_NOT_PRESENT)
+ DEF(plugin_mem_cb, 0, 1, 1, TCG_OPF_NOT_PRESENT)
++DEF(plugin_inlined_cb, 0, 0, 2, TCG_OPF_NOT_PRESENT)
+ 
+ /* Replicate ld/st ops for 32 and 64-bit guest addresses. */
+ DEF(qemu_ld_a32_i32, 1, 1, 1,
+diff --git a/plugins/api.c b/plugins/api.c
+index 24ea64e2de..2342876c15 100644
+--- a/plugins/api.c
++++ b/plugins/api.c
+@@ -58,6 +58,8 @@
+ #include "loader.h"
+ #endif
+ #endif
++#include "exec/cpu-common.h"
++
+ 
+ /* Uninstall and Reset handlers */
+ 
+@@ -71,6 +73,11 @@ void qemu_plugin_reset(qemu_plugin_id_t id, qemu_plugin_simple_cb_t cb)
+     plugin_reset_uninstall(id, cb, true);
+ }
+ 
++int qemu_plugin_prefetch(qemu_plugin_id_t id, uint64_t guest_addr)
++{
++    return cpu_prefetch_tb(current_cpu, guest_addr);
++}
++
+ /*
+  * Plugin Register Functions
+  *
+@@ -105,6 +112,14 @@ void qemu_plugin_register_vcpu_tb_exec_cb(struct qemu_plugin_tb *tb,
+     }
+ }
+ 
++void qemu_plugin_register_vcpu_tb_exec_cb_inlined(struct qemu_plugin_tb *tb,
++                                          qemu_plugin_inlined_callback cb)
++{
++    if (!tb_is_mem_only()) {
++        plugin_register_dyn_cb_inlined(&tb->cbs, cb);
++    }
++}
++
+ void qemu_plugin_register_vcpu_tb_exec_cond_cb(struct qemu_plugin_tb *tb,
+                                                qemu_plugin_vcpu_udata_cb_t cb,
+                                                enum qemu_plugin_cb_flags flags,
+diff --git a/plugins/core.c b/plugins/core.c
+index bb105e8e68..67752c9d5b 100644
+--- a/plugins/core.c
++++ b/plugins/core.c
+@@ -393,6 +393,14 @@ void plugin_register_dyn_cb__udata(GArray **arr,
+     dyn_cb->regular = regular_cb;
+ }
+ 
++void plugin_register_dyn_cb_inlined(GArray **arr,
++                                   qemu_plugin_inlined_callback cb)
++{
++    struct qemu_plugin_dyn_cb *dyn_cb = plugin_get_dyn_cb(arr);
++    dyn_cb->type = PUBLIC_CB_ARBITRARY_INLINE;
++    dyn_cb->inlined = cb;
++}
++
+ void plugin_register_dyn_cond_cb__udata(GArray **arr,
+                                         qemu_plugin_vcpu_udata_cb_t cb,
+                                         enum qemu_plugin_cb_flags flags,
+diff --git a/plugins/plugin.h b/plugins/plugin.h
+index 30e2299a54..04ce6cda8a 100644
+--- a/plugins/plugin.h
++++ b/plugins/plugin.h
+@@ -93,6 +93,10 @@ plugin_register_dyn_cb__udata(GArray **arr,
+                               qemu_plugin_vcpu_udata_cb_t cb,
+                               enum qemu_plugin_cb_flags flags, void *udata);
+ 
++void
++plugin_register_dyn_cb_inlined(GArray **arr,
++                                   qemu_plugin_inlined_callback cb)
++
+ void
+ plugin_register_dyn_cond_cb__udata(GArray **arr,
+                                    qemu_plugin_vcpu_udata_cb_t cb,
+diff --git a/plugins/qemu-plugins.symbols b/plugins/qemu-plugins.symbols
+index 032661f9ea..20d3fb64dd 100644
+--- a/plugins/qemu-plugins.symbols
++++ b/plugins/qemu-plugins.symbols
+@@ -1,4 +1,5 @@
+ {
++  qemu_plugin_prefetch;
+   qemu_plugin_bool_parse;
+   qemu_plugin_end_code;
+   qemu_plugin_entry_code;
+@@ -37,6 +38,7 @@
+   qemu_plugin_register_vcpu_syscall_cb;
+   qemu_plugin_register_vcpu_syscall_ret_cb;
+   qemu_plugin_register_vcpu_tb_exec_cb;
++  qemu_plugin_register_vcpu_tb_exec_cb_inlined;
+   qemu_plugin_register_vcpu_tb_exec_cond_cb;
+   qemu_plugin_register_vcpu_tb_exec_inline_per_vcpu;
+   qemu_plugin_register_vcpu_tb_trans_cb;
+diff --git a/tcg/tcg.c b/tcg/tcg.c
+index 0babae1b88..9776330bf6 100644
+--- a/tcg/tcg.c
++++ b/tcg/tcg.c
+@@ -168,6 +168,7 @@ static inline void tcg_out_vec_op(TCGContext *s, TCGOpcode opc,
+ #endif
+ static void tcg_out_st(TCGContext *s, TCGType type, TCGReg arg, TCGReg arg1,
+                        intptr_t arg2);
++static void tcg_put_raw(TCGContext *s, const void *buf, const void *end);
+ static bool tcg_out_sti(TCGContext *s, TCGType type, TCGArg val,
+                         TCGReg base, intptr_t ofs);
+ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
+@@ -1968,6 +1969,7 @@ bool tcg_op_supported(TCGOpcode op)
+     case INDEX_op_qemu_st_a64_i128:
+         return TCG_TARGET_HAS_qemu_ldst_i128;
+ 
++    case INDEX_op_plugin_inlined_cb:
+     case INDEX_op_mov_i32:
+     case INDEX_op_setcond_i32:
+     case INDEX_op_brcond_i32:
+@@ -6191,6 +6193,9 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb, uint64_t pc_start)
+         TCGOpcode opc = op->opc;
+ 
+         switch (opc) {
++        case INDEX_op_plugin_inlined_cb:
++            tcg_put_raw(s, op->args[0], op->args[1]);
++            break;
+         case INDEX_op_mov_i32:
+         case INDEX_op_mov_i64:
+         case INDEX_op_mov_vec:
+diff --git a/tcg/tci/tcg-target.c.inc b/tcg/tci/tcg-target.c.inc
+index c740864b96..ff4bb212c5 100644
+--- a/tcg/tci/tcg-target.c.inc
++++ b/tcg/tci/tcg-target.c.inc
+@@ -889,6 +889,12 @@ static void tcg_out_op(TCGContext *s, TCGOpcode opc,
+     }
+ }
+ 
++static void tcg_put_raw(TCGContext *s, const void *buf, const void* end)
++{
++    memcpy(s->code_ptr, buf, end - buf);
++    s->code_ptr += len;
++}
++
+ static void tcg_out_st(TCGContext *s, TCGType type, TCGReg val, TCGReg base,
+                        intptr_t offset)
+ {
+-- 
+2.47.0
+
