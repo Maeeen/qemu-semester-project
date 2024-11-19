@@ -76,7 +76,7 @@ void handle_tsr(qemu_plugin_id_t id) {
 }
 #endif
 
-void inter_fork(qemu_plugin_id_t id) {
+inline static void __attribute__((always_inline)) inter_fork(qemu_plugin_id_t id) {
   #ifdef ENABLE_TSR
     handle_tsr(id);
   #endif
@@ -116,6 +116,7 @@ void plugin_fork_start(qemu_plugin_id_t id) {
       pf("Error initializing the fork server.");
       exit(-1);
     }
+    generate_assembly_bytes(callback_asm, 0x0);
     if (likely(afl_is_here())) {
       if (unlikely(fs_handshake())) {
         pf("Error handshake.");
@@ -357,24 +358,25 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   _Static_assert(sizeof(void*) >= sizeof(size_t), "Invalid architecture.");
 
   // Virtual address of the first instruction
-  uint64_t vaddr = qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0));
   // Register callback
 
   #ifdef INLINE_COVERAGE
+  uint64_t vaddr = qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0));
   generate_assembly_bytes(callback_asm, vaddr);
   struct qemu_plugin_inlined_callback cb = ((struct qemu_plugin_inlined_callback) {
     .start = callback_asm,
     .end = &((char*) callback_asm)[39]
   });
   qemu_plugin_register_vcpu_tb_exec_cb_inlined(tb,cb);
-  return;
   #else
+  uint64_t vaddr = qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0));
   qemu_plugin_register_vcpu_tb_exec_cb(tb, tb_exec, QEMU_PLUGIN_CB_NO_REGS, (void*) vaddr);
   #endif
 
   #ifdef ENABLE_TSR
+    uint64_t vaddrTSR = qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0));
     // Forward to parent the request
-    write(TSR[1], &vaddr, sizeof(uint64_t));
+    write(TSR[1], &vaddrTSR, sizeof(uint64_t));
   #endif
 
   // In case of cmplog
