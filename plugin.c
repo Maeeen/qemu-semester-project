@@ -9,6 +9,7 @@
 #endif
 
 #define ENABLE_TSR
+// #define ENABLE_TSR_CHAIN
 #define INLINE_COVERAGE
 
 #ifndef COMPATIBILITY_VERSION
@@ -60,19 +61,34 @@ void setup_initial_callbacks(qemu_plugin_id_t id);
 
 /// Translation requests
 int TSR[2] = { 0 };
+int TSRC[2] = { 0 };
 /// Handle TSR
 void handle_tsr(qemu_plugin_id_t id) {
   uint64_t vaddr;
   while (1) {
     if (read(TSR[0], &vaddr, sizeof(uint64_t)) == -1) {
       if (errno == EAGAIN) {
-        return;
+        break;
       }
     }
     if (qemu_plugin_prefetch(id, vaddr)) {
       pf("Successful prefetch\n");
     }
   }
+  #ifdef ENABLE_TSR_CHAIN
+  while (1) {
+    if (read(TSRC[0], &vaddr, sizeof(uint64_t)) == -1) {
+      if (errno == EAGAIN) {
+        break;
+      }
+    }
+    uint64_t next_tb;
+    read(TSRC[0], &next_tb, sizeof(uint64_t));
+    if (qemu_plugin_prechain(id, vaddr, next_tb)) {
+      pf("[%d] Successful prechain\n", getpid());
+    }
+  }
+  #endif
 }
 #endif
 
@@ -164,6 +180,17 @@ void syscall_cb(qemu_plugin_id_t id, unsigned int vcpu_index,
     } else if (likely(is_forked)) {
       printf("Syscall %ld\n", num);
     }
+  #endif
+}
+
+void on_chain(qemu_plugin_id_t id, uint64_t pc, uint64_t next_pc) {
+  if (unlikely(!is_forked)) {
+    return;
+  }
+  // pf("[%d] Chained %zu, %zu\n", getpid(), pc, next_pc);
+  #ifdef ENABLE_TSR_CHAIN
+  write(TSRC[1], &pc, sizeof(uint64_t));
+  write(TSRC[1], &next_pc, sizeof(uint64_t));
   #endif
 }
 
@@ -430,6 +457,7 @@ void setup_initial_callbacks(qemu_plugin_id_t id) {
   #else
   qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
   #endif
+  qemu_plugin_register_vcpu_tb_chain_cb(id, on_chain);
 }
 
 #ifdef ENABLE_TSR
@@ -449,6 +477,23 @@ void tsr_setup() {
 }
 #endif
 
+#ifdef ENABLE_TSR_CHAIN
+void tsrc_setup() {
+  if (pipe(TSRC)) {
+    pf("Error creating disassembly pipe.\n");
+    return;
+  }
+  if (fcntl(TSRC[0], F_SETFL, O_NONBLOCK)) {
+    pf("Error setting non-blocking mode on disassembly pipe.\n");
+    return;
+  }
+  if (fcntl(TSRC[1], F_SETFL, O_NONBLOCK)) {
+    pf("Error setting non-blocking mode on disassembly pipe.\n");
+    return;
+  }
+}
+#endif
+
 QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info, int argc, char **argv) {
   #ifdef CMPLOG
     if (disas_init(info->target_name)) {
@@ -459,6 +504,9 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
 
   #ifdef ENABLE_TSR
     tsr_setup();
+  #endif
+  #ifdef ENABLE_TSR_CHAIN
+    tsrc_setup();
   #endif
 
   setup_initial_callbacks(id);
