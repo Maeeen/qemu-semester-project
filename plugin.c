@@ -92,7 +92,9 @@ void plugin_fork_start(qemu_plugin_id_t id) {
   // Two conditions should be met: we are starting user code and we have not forked yet.
   if (!is_forked && has_started) {
     is_forked = 1;
-    // qemu_plugin_reset(id, test);
+    #ifndef FORK_AT_VCPU_INIT
+      qemu_plugin_register_vcpu_syscall_cb(id, NULL);
+    #endif
 
     #ifdef CMPLOG
       // declare available registers for cmplog, to be able to find them back easily.
@@ -116,7 +118,6 @@ void plugin_fork_start(qemu_plugin_id_t id) {
       pf("Error initializing the fork server.");
       exit(-1);
     }
-    generate_assembly_bytes(callback_asm, 0x0);
     if (likely(afl_is_here())) {
       if (unlikely(fs_handshake())) {
         pf("Error handshake.");
@@ -141,6 +142,7 @@ void plugin_fork_start(qemu_plugin_id_t id) {
         #ifdef ENABLE_TSR
           handle_tsr(id);
         #endif
+        pf("Parent: %d\n", getpid());
         pf("Press a key to launch a new instance.\n");
         getchar();
         if (fork() == 0) break;
@@ -157,8 +159,10 @@ void syscall_cb(qemu_plugin_id_t id, unsigned int vcpu_index,
   uint64_t a3, uint64_t a4, uint64_t a5,
   uint64_t a6, uint64_t a7, uint64_t a8) {
   #ifndef FORK_AT_VCPU_INIT
-    if (unlikely(!is_forked)) {
+    if (unlikely(!is_forked && has_started)) {
       plugin_fork_start(id);
+    } else if (likely(is_forked)) {
+      printf("Syscall %ld\n", num);
     }
   #endif
 }
