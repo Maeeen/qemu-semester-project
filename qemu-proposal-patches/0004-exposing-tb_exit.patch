@@ -1,0 +1,167 @@
+From 5b02f7285bf4b62c664cb642a6fab927d5ac5d64 Mon Sep 17 00:00:00 2001
+From: Marwan Azuz <marwanazuz+cinnabyte@gmail.com>
+Date: Tue, 26 Nov 2024 12:50:53 +0100
+Subject: [PATCH] exposing tb_exit and making it work
+
+---
+ accel/tcg/cpu-exec.c       | 24 +++++++++---------------
+ include/exec/cpu-common.h  |  2 +-
+ include/qemu/plugin.h      |  2 +-
+ include/qemu/qemu-plugin.h |  4 ++--
+ plugins/api.c              |  4 ++--
+ plugins/core.c             |  4 ++--
+ 6 files changed, 17 insertions(+), 23 deletions(-)
+
+diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
+index e7b246d6cd..ff4be50ee8 100644
+--- a/accel/tcg/cpu-exec.c
++++ b/accel/tcg/cpu-exec.c
+@@ -1017,12 +1017,9 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
+             /* See if we can patch the calling TB. */
+             if (last_tb) {
+                 tb_add_jump(last_tb, tb_exit, tb);
+-                // printf("[%d] ===> Patching TB last: %zu, next: %zu\n", getpid(), last_tb->pc, tb->pc);
+-                qemu_plugin_tb_chain_cb(cpu, last_tb->pc, tb->pc);
++                qemu_plugin_tb_chain_cb(cpu, last_tb->pc, tb->pc, tb_exit);
+             }
+ 
+-            // printf("[%d] ===> Executing TB at %zu\n", getpid(), pc);
+-
+             cpu_loop_exec_tb(cpu, tb, pc, &last_tb, &tb_exit);
+ 
+             /* Try to align the host and virtual clocks
+@@ -1139,7 +1136,6 @@ int cpu_prefetch_tb(CPUState *cpu, vaddr pc) {
+         tb = tb_gen_code(cpu, pc, cs_base, flags, cflags);
+         mmap_unlock();
+ 
+-        // printf("Pre-translated TB at %p\n", tb->tc.ptr);
+         /*
+             * We add the TB in the virtual pc hash table
+             * for the fast lookup
+@@ -1153,10 +1149,7 @@ int cpu_prefetch_tb(CPUState *cpu, vaddr pc) {
+     return 0;
+ }
+ 
+-int cpu_prechain_tb(CPUState *cpu, vaddr pc, vaddr pc_to) {
+-    // NO-OP: does not work
+-    return 0;
+-    int tb_exit = 0;
++int cpu_prechain_tb(CPUState *cpu, vaddr pc, vaddr pc_to, int tb_exit) {
+     TranslationBlock *last_tb, *tb;
+     vaddr _unused;
+     uint64_t cs_base;
+@@ -1178,18 +1171,19 @@ int cpu_prechain_tb(CPUState *cpu, vaddr pc, vaddr pc_to) {
+     }
+     
+     tb = tb_lookup(cpu, pc_to, cs_base, flags, cflags);
++    if (tb == NULL) {
++        return 0;
++    }
+     last_tb = tb_lookup(cpu, pc, cs_base, flags, cflags);
++    if (last_tb == NULL) {
++        return 0;
++    }
+ 
+     if (tb && last_tb) {
+-        if (tb->jmp_list_head == (uintptr_t) NULL) {
+-            // printf("[%d] TB at %zu already has a jump list!\n", getpid(), tb->pc);
+-            return 0;
+-        }
++ 
+         tb_add_jump(last_tb, tb_exit, tb);
+-        // printf("[%d] Successfully chained between %zu (%zu) and %zu (%zu)!\n", getpid(), last_tb->pc, pc, tb->pc, pc_to);
+         return 1;
+     }
+ 
+-    // printf("[%d] Failed to chain between %zu and %zu!\n", getpid(), pc, pc_to);
+     return 0;
+ }
+\ No newline at end of file
+diff --git a/include/exec/cpu-common.h b/include/exec/cpu-common.h
+index 49ee26ad16..c3ea6c10b6 100644
+--- a/include/exec/cpu-common.h
++++ b/include/exec/cpu-common.h
+@@ -228,7 +228,7 @@ G_NORETURN void cpu_loop_exit_restore(CPUState *cpu, uintptr_t pc);
+ int cpu_exec(CPUState *cpu);
+ 
+ int cpu_prefetch_tb(CPUState *cpu, vaddr pc);
+-int cpu_prechain_tb(CPUState *cpu, vaddr pc, vaddr pc_to);
++int cpu_prechain_tb(CPUState *cpu, vaddr pc, vaddr pc_to, int tb_exec);
+ 
+ /**
+  * env_archcpu(env)
+diff --git a/include/qemu/plugin.h b/include/qemu/plugin.h
+index 08defd370e..45f706d74a 100644
+--- a/include/qemu/plugin.h
++++ b/include/qemu/plugin.h
+@@ -161,7 +161,7 @@ CPUPluginState *qemu_plugin_create_vcpu_state(void);
+ void qemu_plugin_vcpu_init_hook(CPUState *cpu);
+ void qemu_plugin_vcpu_exit_hook(CPUState *cpu);
+ void qemu_plugin_tb_trans_cb(CPUState *cpu, struct qemu_plugin_tb *tb);
+-void qemu_plugin_tb_chain_cb(CPUState *cpu, vaddr last_tb,  vaddr current_tb);
++void qemu_plugin_tb_chain_cb(CPUState *cpu, vaddr last_tb,  vaddr current_tb, int tb_exit);
+ void qemu_plugin_vcpu_idle_cb(CPUState *cpu);
+ void qemu_plugin_vcpu_resume_cb(CPUState *cpu);
+ void
+diff --git a/include/qemu/qemu-plugin.h b/include/qemu/qemu-plugin.h
+index a5ca694490..3378b6c7b4 100644
+--- a/include/qemu/qemu-plugin.h
++++ b/include/qemu/qemu-plugin.h
+@@ -378,7 +378,7 @@ typedef void (*qemu_plugin_vcpu_tb_trans_cb_t)(qemu_plugin_id_t id,
+  * @chained_with: opaque handle for the translation block chained with
+  */
+ typedef void (*qemu_plugin_vcpu_tb_chain_cb_t)(qemu_plugin_id_t id,
+-                                               uint64_t vaddr_last_tb, uint64_t vaddr_chained_with);
++                                               uint64_t vaddr_last_tb, uint64_t vaddr_chained_with, int tb_exit);
+ 
+ void qemu_plugin_register_vcpu_tb_chain_cb(qemu_plugin_id_t id,
+                                            qemu_plugin_vcpu_tb_chain_cb_t cb);
+@@ -389,7 +389,7 @@ void qemu_plugin_register_vcpu_tb_chain_cb(qemu_plugin_id_t id,
+  * //TODO
+  */
+ QEMU_PLUGIN_EXPORT int qemu_plugin_prechain(qemu_plugin_id_t id,
+-                                            uint64_t vaddr1, uint64_t vaddr2);
++                                            uint64_t vaddr1, uint64_t vaddr2, int tb_exit);
+ #endif
+ 
+ /**
+diff --git a/plugins/api.c b/plugins/api.c
+index cfacc85db7..f1baa0d121 100644
+--- a/plugins/api.c
++++ b/plugins/api.c
+@@ -78,8 +78,8 @@ int qemu_plugin_prefetch(qemu_plugin_id_t id, uint64_t guest_addr)
+     return cpu_prefetch_tb(current_cpu, guest_addr);
+ }
+ 
+-int qemu_plugin_prechain(qemu_plugin_id_t id, uint64_t vaddr1, uint64_t vaddr2) {
+-    return cpu_prechain_tb(current_cpu, vaddr1, vaddr2);
++int qemu_plugin_prechain(qemu_plugin_id_t id, uint64_t vaddr1, uint64_t vaddr2, int tb_exit) {
++    return cpu_prechain_tb(current_cpu, vaddr1, vaddr2, tb_exit);
+ }
+ /*
+  * Plugin Register Functions
+diff --git a/plugins/core.c b/plugins/core.c
+index 8104f23c11..f5c0578ea9 100644
+--- a/plugins/core.c
++++ b/plugins/core.c
+@@ -494,7 +494,7 @@ void qemu_plugin_tb_trans_cb(CPUState *cpu, struct qemu_plugin_tb *tb)
+ }
+ 
+ QEMU_DISABLE_CFI
+-void qemu_plugin_tb_chain_cb(CPUState *cpu, vaddr last_tb, vaddr current_tb)
++void qemu_plugin_tb_chain_cb(CPUState *cpu, vaddr last_tb, vaddr current_tb, int tb_exit)
+ {
+     struct qemu_plugin_cb *cb, *next;
+     enum qemu_plugin_event ev = QEMU_PLUGIN_EV_VCPU_TB_CHAIN;
+@@ -504,7 +504,7 @@ void qemu_plugin_tb_chain_cb(CPUState *cpu, vaddr last_tb, vaddr current_tb)
+     QLIST_FOREACH_SAFE_RCU(cb, &plugin.cb_lists[ev], entry, next) {
+         qemu_plugin_vcpu_tb_chain_cb_t func = cb->f.vcpu_tb_chain;
+ 
+-        func(cb->ctx->id, last_tb, current_tb);
++        func(cb->ctx->id, last_tb, current_tb, tb_exit);
+     }
+ }
+ 
+-- 
+2.47.0
+

@@ -9,7 +9,7 @@
 #endif
 
 #define ENABLE_TSR
-// #define ENABLE_TSR_CHAIN
+#define ENABLE_TSR_CHAIN
 #define INLINE_COVERAGE
 
 #ifndef COMPATIBILITY_VERSION
@@ -83,8 +83,10 @@ void handle_tsr(qemu_plugin_id_t id) {
       }
     }
     uint64_t next_tb;
+    int tb_exit;
     read(TSRC[0], &next_tb, sizeof(uint64_t));
-    if (qemu_plugin_prechain(id, vaddr, next_tb)) {
+    read(TSRC[0], &tb_exit, sizeof(int));
+    if (qemu_plugin_prechain(id, vaddr, next_tb, tb_exit)) {
       pf("[%d] Successful prechain\n", getpid());
     }
   }
@@ -183,7 +185,7 @@ void syscall_cb(qemu_plugin_id_t id, unsigned int vcpu_index,
   #endif
 }
 
-void on_chain(qemu_plugin_id_t id, uint64_t pc, uint64_t next_pc) {
+void on_chain(qemu_plugin_id_t id, uint64_t pc, uint64_t next_pc, int tb_exit) {
   if (unlikely(!is_forked)) {
     return;
   }
@@ -191,6 +193,7 @@ void on_chain(qemu_plugin_id_t id, uint64_t pc, uint64_t next_pc) {
   #ifdef ENABLE_TSR_CHAIN
   write(TSRC[1], &pc, sizeof(uint64_t));
   write(TSRC[1], &next_pc, sizeof(uint64_t));
+  write(TSRC[1], &tb_exit, sizeof(int));
   #endif
 }
 
