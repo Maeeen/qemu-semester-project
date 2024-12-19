@@ -3,13 +3,15 @@
 #import "@preview/codly:1.0.0": *
 #show: codly-init.with()
 
-#set page(background: box(height: 100%, width: 100%)[
-  #align(center + horizon)[
-    #rotate(-45deg)[
-      #text(red.transparentize(70%), size: 84pt, "DRAFT")
+#set page(
+  background: box(height: 100%, width: 100%)[
+    #align(center + horizon)[
+      #rotate(-45deg)[
+        #text(red.transparentize(70%), size: 84pt, "DRAFT")
+      ]
     ]
-  ]
-])
+  ],
+)
 
 #let code(s) = { raw(s, lang: "c") }
 #let __asm__(s) = { raw(s, lang: "asm") }
@@ -28,7 +30,7 @@
   type: "Semester project report",
   logos: (
     image("./template/logos/EPFLlogo.svg"),
-    image("./template/logos/LABlogo.svg")
+    image("./template/logos/LABlogo.svg"),
   ),
   body: [
     Prof. Mathias Payer \
@@ -37,7 +39,7 @@
     Florian Hofhammer \
     Supervisor
   ],
-  date: datetime(year: 2025, month: 1, day: 10)
+  date: datetime(year: 2025, month: 1, day: 10),
 )
 
 #dedication[
@@ -70,22 +72,20 @@ Marwan
 
 #page-title(title: "Abstract")
 
-#set par(
-  first-line-indent: 1em
-)
+#set par(first-line-indent: 1em)
 
 #text(fill: red)[
   No idea to write here
 ]
 
-#generate-outline
+#generate-outline()
 
 #chapter(title: "Introduction")
 
 
 // Gently ease
 _American-Fuzzy-Lop plus plus_ (AFL++) is a popular fuzzer that has been used to
-find numerous security vulnerabilities in software. The most effective way 
+find numerous security vulnerabilities in software. The most effective way
 to fuzz is to have coverage-guided fuzzing: when source code is available,
 AFL++ provides compiler plugins to compile the target software with
 instrumentation that allows feedback to the fuzzer on interesting inputs.
@@ -134,7 +134,7 @@ that doing a certain action gives them a banana, they will keep doing it; replac
 the banana by a program crash and the monkey by a fuzzer and you have a very
 simple analogy of what fuzzing is.
 To be more formal and to put words on the analogy, fuzzing's goal is to find
-crashes. It follows a simple routine:  
+crashes. It follows a simple routine:
 generate an input to a program, run the program with the input, and
 observe the behavior of the program. If it crashes, it likely indicate an issue in the
 program. The end-user is then free to investigate the crash and fix the issue,
@@ -153,7 +153,7 @@ mutator or as complex as a genetic algorithm.
 To get coverage, many tools out there exist but they
 essentially boil down to: at desired instructions in the program, before
 executing, do _something_.
-The _something_ can be as simple as incrementing a counter, or as complex as 
+The _something_ can be as simple as incrementing a counter, or as complex as
 recording the path taken by the program. The simplest way taken by AFL++'s
 instrumentation is to increment a counter at each basic block of the program. A
 basic block is a sequence of instructions that is always executed in sequence; a
@@ -174,13 +174,13 @@ depicted in @simple_program_cfg.
     node-stroke: 1pt,
     edge-stroke: 1pt,
     node((0, 0), align(left, code("y = (short) random()\nx = get_char()"))),
-    edge((0, 0), "d,l,d", "-|>", code("x < y"), label-sep: .2em), 
+    edge((0, 0), "d,l,d", "-|>", code("x < y"), label-sep: .2em),
     edge((0, 0), "d,d", "-|>", code("x >= y"), label-side: left),
     node((0, 2), code("print(\"Try again!\")")),
     node((-1, 2), [#code("*0x0 = 0") #emoji.explosion]),
-    edge((0, 2), "r", "uu", "l", "-|>")
+    edge((0, 2), "r", "uu", "l", "-|>"),
   ),
-  caption: [The Control Flow Graph of the running example: reads a character and crashes if it is less than a random number]
+  caption: [The Control Flow Graph of the running example: reads a character and crashes if it is less than a random number],
 ) <simple_program_cfg>
 
 
@@ -195,7 +195,7 @@ each basic block, as depicted in @simple_program_cfg_instru.
     node((0, -1), code("map[0]++"), stroke: teal),
     edge((0, -1), "d", "-|>"),
     node((0, 0), align(left, code("y = (short) random()\nx = get_char()"))),
-    edge((0, 0), "d,l,d", "-|>", code("x < 97"), label-sep: .2em), 
+    edge((0, 0), "d,l,d", "-|>", code("x < 97"), label-sep: .2em),
     edge((0, 0), "d,d", "-|>", code("x >= 97"), label-side: left),
     node((-1, 2), code("map[1]++"), stroke: teal),
     edge((-1, 2), "d", "-|>"),
@@ -206,7 +206,7 @@ each basic block, as depicted in @simple_program_cfg_instru.
     edge((0, 3), "r", "uuu", "l", "..|>", crossing: true),
     edge((0, 3), "rr", "uuuu", "ll", "-|>", stroke: teal, crossing: true),
   ),
-  caption: [The Control Flow Graph of the running example with instrumentation]
+  caption: [The Control Flow Graph of the running example with instrumentation],
 ) <simple_program_cfg_instru>
 
 Therefore upon an execution, the fuzzer will have information on which basic
@@ -220,7 +220,7 @@ where types have been explicitly added for clarity:
 #codly-offset(offset: 247)
 ```c
 (unsigned short) cur_location = <COMPILE_TIME_RANDOM>;
-((unsigned short*) shared_mem)[cur_location ^ prev_location]++; 
+((unsigned short*) shared_mem)[cur_location ^ prev_location]++;
 
 (unsigned short) prev_location = cur_location >> 1;
 ```
@@ -238,7 +238,7 @@ To get back on the example, it would look like the following:
   node((0, -1), align(left, code("cur = 0xbeef\nshared_mem[cur ^ prev]++;\nprev = cur >> 1;")), stroke: aqua),
   edge((0, -1), "d", "-|>"),
   node((0, 0), align(left, code("y = (short) random()\nx = get_char()"))),
-  edge((0, 0), "d,l,d", "-|>", code("x < 97"), label-sep: .2em), 
+  edge((0, 0), "d,l,d", "-|>", code("x < 97"), label-sep: .2em),
   edge((0, 0), "d,d", "-|>", code("x >= 97"), label-side: left),
   node((-1, 2), align(left, code("cur = 0xcafe\nshared_mem[cur ^ prev]++;\nprev = cur >> 1;")), stroke: aqua),
   edge((-1, 2), "d", "-|>"),
@@ -250,7 +250,7 @@ To get back on the example, it would look like the following:
   edge((0, 3), "rr", "uuuu", "ll", "-|>", stroke: aqua, crossing: true),
 )
 
-There is notable remarks to make: (1) the map is 64 kilo-bytes; (2) the constant `cur` 
+There is notable remarks to make: (1) the map is 64 kilo-bytes; (2) the constant `cur`
 are determined at compile-time; (3) the `prev` is a global variable, i.e. it is
 stateful; (4) it is lossy.
 
@@ -269,7 +269,7 @@ just notice a difference in the coverage map and mark it as interesting
 
 The general idea as we have described until now is to do these steps:
 
-1. 
+1.
 
 #figure(
   diagram(
@@ -280,15 +280,21 @@ The general idea as we have described until now is to do these steps:
     edge((0, -3), label: [1. Spawn program], "rrrrrr", "..|>"),
     node((6, -3), shape: circle, inset: 3pt, h(1pt)),
     edge((6, -3), label: [OS loads fuzzed binary], "dd", "--|>", label-side: left),
-    edge((0, -1), label: [2. Send input], "rrrrrr", "-|>",  label-side: left),
+    edge((0, -1), label: [2. Send input], "rrrrrr", "-|>", label-side: left),
     edge((6, 0), label: [Program exits], "d", "--|>", label-side: left),
     node((6, 1), shape: circle, inset: 3pt, h(1pt)),
-    
-    node((6, 0), align(center)[Program execution \#0], enclose: ((6, -1), (6, 0)),
-      stroke: orange, fill: orange.lighten(90%)),
+
+    node(
+      (6, 0),
+      align(center)[Program execution \#0],
+      enclose: ((6, -1), (6, 0)),
+      stroke: orange,
+      fill: orange.lighten(90%),
+    ),
     edge((0, 1), label: [3. Get coverage, and exit code], "rrrrrr", "<|-"),
     edge((0, 2), "r,d,l", "-|>", label: [4. Mutate input], label-side: left),
-  ), caption: [The fuzzing process]
+  ),
+  caption: [The fuzzing process],
 )
 
 However, this has its drawbacks: loading the executable is actually a procedure
@@ -312,22 +318,27 @@ Therefore, the actual protocol is as follows:
     edge((10, -3), label: [OS loads fuzzed binary], "d", "--|>", label-side: right),
     edge((0, -2), label: [1. Request new process], "rrrrrrrrrr", "-|>", label-side: left),
     edge((10, -1.5), label: [Fork], "lllll", "--|>", label-side: left, /*snap-to: (auto, <fork-start>)*/),
-    node((5, -0), [Forked fuzzed binary], enclose: ((5, -1.5), (5, 0.5)),
-      stroke: red, fill: red.lighten(90%)),
+    node((5, -0), [Forked fuzzed binary], enclose: ((5, -1.5), (5, 0.5)), stroke: red, fill: red.lighten(90%)),
     edge((0, -1), label: [2. Send input], "rrrrr", "-|>"),
     edge((5, 0), label: [Fork exits], "d", "--|>", label-side: left),
     node((5, 1), shape: circle, inset: 3pt, h(1pt), name: <fork-start>),
-    node((10, -2), align(center)[Fuzzed binary], enclose: ((10, -2), (10, 5)),
-      stroke: orange, fill: orange.lighten(90%)),
-    
-    edge((5, 1), label: [3. Get  coverage, and exit code], "lllll", "-|>"),
+    node(
+      (10, -2),
+      align(center)[Fuzzed binary],
+      enclose: ((10, -2), (10, 5)),
+      stroke: orange,
+      fill: orange.lighten(90%),
+    ),
+
+    edge((5, 1), label: [3. Get coverage, and exit code], "lllll", "-|>"),
     edge((0, 2), "r,d,l", "-|>", label: [4. Mutate input], label-side: left),
     edge((0, 4), label: [1. Request new process], "rrrrrrrrrr", "-|>", label-side: left),
-    node((5, 4.5), $dots.v$, stroke: none)
+    node((5, 4.5), $dots.v$, stroke: none),
   ),
-  caption: [The AFL process with a fork server.])
+  caption: [The AFL process with a fork server.],
+)
 
-To implement the plugin rather effectively, the `fork` syscall should happen 
+To implement the plugin rather effectively, the `fork` syscall should happen
 in the plugin, as close as possible before the execution of the fuzzed binary.
 
 #subchapter(title: "Conclusion")
@@ -347,7 +358,7 @@ only on userspace emulation, `x86_64-linux-user` for the purpose of this
 project. However, we will define the relevant parts.
 
 QEMU reads the binary, basic block per basic block, and translates them into
-an _intermediate representation_ (IR) called TCG (for Tiny Code Generator). 
+an _intermediate representation_ (IR) called TCG (for Tiny Code Generator).
 There is two parts for the translation: the frontend, that reads the binary and
 translates it into TCG, and the backend, that translates the TCG into the host's
 architecture. The frontend is target-specific, and the backend is host-specific.
@@ -360,7 +371,7 @@ architecture. The frontend is target-specific, and the backend is host-specific.
 //   node-stroke: 1pt,
 //   edge-stroke: 1pt,
 //   node((0, 0), shape: rect, align(left, __asm__("call <getc>\nrand %bx\ncmp %ax, %bx\njl <unvalid>"))),
-//   edge((0, 0.25), "l,d", "-|>", code("x < y"), label-sep: .2em, snap-to: (auto, <explosion>)), 
+//   edge((0, 0.25), "l,d", "-|>", code("x < y"), label-sep: .2em, snap-to: (auto, <explosion>)),
 //   edge((0, 0), "d", "-|>", /* [#code("x >= y"), implicitly], */label-side: right),
 //   node((0, 1), align(left, [$dots.h$\ #__asm__("call <puts>\njmp <main>")])),
 //   node((-1, 1), [#__asm__("mov $0x0, 0x0") #emoji.explosion], name: <explosion>),
@@ -423,7 +434,7 @@ This is a really strong point compared to `qemuafl`: the change is minimal, and
 does not involve messing around with the TCG translation (at least… indirectly.)
 To comply with callbacks, QEMU inserts a `call` instruction to the plugin's
 `tb_exec` callback at the beginning of each TB. Design-wise, it is simple,
-easily maintanable and therefore easy to change and improve!
+easily maintainable and therefore easy to change and improve!
 
 Note as well that it relies heavily on QEMU's correctness with its internal
 implementation: a possible doubt that we had was that, for performance reason,
@@ -491,34 +502,39 @@ descriptors, namely 198 and 199. The target binary reads from the file
 descriptor.
 
 // https://github.com/Maeeen/qemu-semester-project/blob/112da69a86eb78f685bb3daefb8b2675996b0057/code/my-plugin/plugin.c#L314
-
-#diagram(
-  spacing: (7mm, 10mm),
-  node-stroke: 1pt,
-  edge-stroke: 1pt,
-  node((0, 0), enclose: ((0, -3), (0, 3.5)), [Fuzzer (AFL++)], stroke: teal, fill: teal.lighten(90%)),
-  edge((0, -3), label: [0. Spawn program], "rrrrrrrrrr", "..|>"),
-  node((10, -2), align(center)[Fuzzed binary], enclose: ((10, -2), (10, 3.5)),
-    stroke: orange, fill: orange.lighten(90%)),
-  node((10, -3), shape: circle, inset: 3pt, h(1pt)),
-  edge((10, -3), label: [OS loads fuzzed binary], "d", "-|>", label-side: right),
-  edge((10, -2), label: [1. Hi #emoji.hand.wave], "llllllllll", "-|>", label-side: right),
-  edge((0, -1.5), label: [2. Fork me a process #emoji.hands], "rrrrrrrrrr", "-|>"),
-  edge((10, -1), label: [3. Okay, here it is], "lllll", "-"),
-  edge((5, -1), label: [], "lllll", "-|>"),
-  node((5, -1), [Forked fuzzed binary], enclose: ((5, -1.5), (5, 0.5)),
-    stroke: red, fill: red.lighten(90%)),
-  edge((5, 0.5), label: [4. Get coverage], "lllll", "-|>"),
-  edge((5, 0.5), label: [4. Retrieve status], "rrrrr", "-|>"),
-  edge((10, 1.5), label: [5. Send status], "llllllllll", "-|>"),
-  edge((0, 3), label: [6. Fork me a process #emoji.hands], "rrrrrrrrrr", "-|>"),
-  node((5, 3.5), $dots.v$, stroke: none),
-)
+#figure(
+  diagram(
+    spacing: (7mm, 10mm),
+    node-stroke: 1pt,
+    edge-stroke: 1pt,
+    node((0, 0), enclose: ((0, -3), (0, 3.5)), [Fuzzer (AFL++)], stroke: teal, fill: teal.lighten(90%)),
+    edge((0, -3), label: [0. Spawn program], "rrrrrrrrrr", "..|>"),
+    node(
+      (10, -2),
+      align(center)[Fuzzed binary],
+      enclose: ((10, -2), (10, 3.5)),
+      stroke: orange,
+      fill: orange.lighten(90%),
+    ),
+    node((10, -3), shape: circle, inset: 3pt, h(1pt)),
+    edge((10, -3), label: [OS loads fuzzed binary], "d", "-|>", label-side: right),
+    edge((10, -2), label: [1. Hi #emoji.hand.wave], "llllllllll", "-|>", label-side: right),
+    edge((0, -1.5), label: [2. Fork me a process #emoji.hands], "rrrrrrrrrr", "-|>"),
+    edge((10, -1), label: [3. Okay, here it is], "lllll", "-"),
+    edge((5, -1), label: [], "lllll", "-|>"),
+    node((5, -1), [Forked fuzzed binary], enclose: ((5, -1.5), (5, 0.5)), stroke: red, fill: red.lighten(90%)),
+    edge((5, 0.5), label: [4. Get coverage], "lllll", "-|>"),
+    edge((5, 0.5), label: [4. Retrieve status], "rrrrr", "-|>"),
+    edge((10, 1.5), label: [5. Send status], "llllllllll", "-|>"),
+    edge((0, 3), label: [6. Fork me a process #emoji.hands], "rrrrrrrrrr", "-|>"),
+    node((5, 3.5), $dots.v$, stroke: none),
+  ),
+  caption: "A visual representation between AFL++ and its fuzzed binary",
+) <protocol_fig>
 
 For the current implementation that we have, it is sufficient to follow this protocol.
-
-#TODO
-
+Note however that the protocol has changed, while staying backward compatible and we will
+explore the new details when introducing the _cmplog_ feature.
 
 Introduce and discuss the design decisions that you made during this project.
 Highlight why individual decisions are important and/or necessary. Discuss
@@ -527,6 +543,81 @@ how the design fits together.
 This section is usually 5-10 pages.
 
 #chapter(title: "Implementation")
+
+#subchapter(title: "Development configuration")
+
+To devise the plugin,
+
+```c
+int main(void) {
+  char buf[15];
+  read(stdin, 15);
+  if (buf[0] == 'f' && buf[1] == 'u' && buf[2] == 'z' && buf[3] == 'z')
+    *0x0 = 0;
+  return 0;
+}
+```
+
+#subchapter(title: "The fork server")
+
+The implementation can be really straightforward, on a `vcpu_init` callback, initialize the connection
+with AFL++. AFL++ exposes a pipe with two file descriptors (`199` for binary→AFL++, `198` for AFL++→binary) for communication.
+
+The 1#super[st] version of the protocol described in @protocol_fig can be described programatically as:
+
+// https://github.com/Maeeen/qemu-semester-project/blob/112da69a86eb78f685bb3daefb8b2675996b0057/code/my-plugin/plugin.c#L72
+1. A handshake: The forkserver sends a 4-bytes zero.
+  - AFL++ passes via the `__AFL_SHM_ID` environment variable the shared memory ID for the coverage map. In this version, the map size is constant and is 64 kilo-bytes. #TODO verify
+2. For each fork:
+  1. AFL++ sends a 4-bytes dummy value.
+  2. FS sends the process id of the forked binary.
+  3. FS waits for the fork to exits, and sends the status code.
+  4. Repeat.
+
+Roughly speaking, the following implements the fork server where, for the sake of simplicity, error handling and system calls to map the shared coverage map have been removed:
+
+```c
+int is_forked = 0;
+
+void on_vcpu_init() {
+  pid_t child;
+  if (is_forked) return;
+  else {
+    is_forked = true;
+    afl_write(0, 4); // handshake
+    while(true) {
+      map_shared_page(getenv("__AFL_SHM_ID")) // maps the coverage map
+      afl_read(&dummy, 4); // waits for signal
+      if ((child = fork()) == 0) { // forks
+        return;
+      }
+      afl_write(child, 4); // writes child PID
+      waitpid(child, &status, 0); // waits for exit
+      afl_write(status, 4); // writes the status
+    }
+  }
+}
+```
+
+However, this implementation is sub-optimal: the following callback gets executed at an early stage of QEMU's initialization, namely #link("https://github.com/qemu/qemu/blob/2af37e791906cfda42cb9604a16d218e56994bb1/linux-user/main.c#L812")[here], which happens before reading the executable itself. There is therefore a non-negligible overhead.
+
+We will show two tricks in the following subsection that allowed for optimizations of the fuzzing loop.
+
+#subchapter(title: "Overcoming the late fork")
+
+To overcome the overhead, after carefully analyzing the source code, QEMU uses a user-space read-copy-update mechanism for its TCG, where some part of the execution are defined as critical sections. The vCPU loop of QEMU is (1) find the next translation block to execute; (2) if it is not executed yet, translate it; (3) execute it until the end, which is a system call, or branch; (4) handle system call and interrupts. In this case, step 2 is a critical section. This routine shows that forking could be made closer to the real execution of the program by forking when the first system call happens: this is valid as most fuzzing targets would read a file descriptor before having the part.
+
+#TODO "show speed-up"
+
+The following trick requires to understand how QEMU bootstraps and loads the binary.
+
+#subchapter(title: "Coverage")
+
+The QEMU API exposes the following two primitives to instrument the code, namely:
+- `qemu_plugin_install`
+
+
+
 
 The implementation covers some of the implementation details of your project.
 This is not intended to be a low level description of every line of code that
@@ -548,7 +639,7 @@ The related work section covers closely related work. Here you can highlight
 the related work, how it solved the problem, and why it solved a different
 problem. Do not play down the importance of related work, all of these
 systems have been published and evaluated! Say what is different and how
-you overcome some of the weaknesses of related work by discussing the 
+you overcome some of the weaknesses of related work by discussing the
 trade-offs. Stay positive!
 
 This section is usually 3-5 pages.
@@ -560,7 +651,7 @@ your project. Mention the core results and why as well as how your system
 advances the status quo.
 #subchapter(title: "Sources")
 
-All the project is available under the following GitHub repository: 
+All the project is available under the following GitHub repository:
 #link("https://github.com/Maeeen/qemu-semester-project")
 
 #bibliography("bib.bib")
