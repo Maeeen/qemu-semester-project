@@ -1,0 +1,135 @@
+From b2f0f9a7b6cc8f32ef815001b27cd1c949c23abe Mon Sep 17 00:00:00 2001
+From: Marwan Azuz <marwanazuz+cinnabyte@gmail.com>
+Date: Mon, 18 Nov 2024 18:27:05 +0100
+Subject: [PATCH 2/2] sometehing
+
+---
+ accel/tcg/plugin-gen.c     |  6 ++++--
+ include/qemu/qemu-plugin.h | 20 +++++++++-----------
+ plugins/plugin.h           |  2 +-
+ tcg/i386/tcg-target.c.inc  |  9 +++++++++
+ tcg/tcg.c                  |  2 +-
+ 5 files changed, 24 insertions(+), 15 deletions(-)
+
+diff --git a/accel/tcg/plugin-gen.c b/accel/tcg/plugin-gen.c
+index 6b4bca999e..4457766536 100644
+--- a/accel/tcg/plugin-gen.c
++++ b/accel/tcg/plugin-gen.c
+@@ -25,6 +25,7 @@
+ #include "cpu.h"
+ #include "tcg/tcg.h"
+ #include "tcg/tcg-temp-internal.h"
++#include "tcg/tcg-internal.h"
+ #include "tcg/tcg-op.h"
+ #include "exec/exec-all.h"
+ #include "exec/plugin-gen.h"
+@@ -212,9 +213,9 @@ static void gen_mem_cb(struct qemu_plugin_regular_cb *cb,
+     tcg_temp_free_i32(cpu_index);
+ }
+ 
+-static void gen_inline_later_cb(qemu_plugin_inlined_callback cb)
++static void gen_inline_later_cb(qemu_plugin_inlined_callback *cb)
+ {
+-    tcg_gen_op2(INDEX_op_plugin_inlined_cb, cb.start, cb.end);
++    tcg_gen_op2(INDEX_op_plugin_inlined_cb, (TCGArg) cb->start, (TCGArg) cb->end);
+ }
+ 
+ static void inject_cb(struct qemu_plugin_dyn_cb *cb)
+@@ -235,6 +236,7 @@ static void inject_cb(struct qemu_plugin_dyn_cb *cb)
+         break;
+     case PUBLIC_CB_ARBITRARY_INLINE:
+         gen_inline_later_cb(&cb->inlined);
++        break;
+     default:
+         g_assert_not_reached();
+     }
+diff --git a/include/qemu/qemu-plugin.h b/include/qemu/qemu-plugin.h
+index a0136cfe0a..c14212b386 100644
+--- a/include/qemu/qemu-plugin.h
++++ b/include/qemu/qemu-plugin.h
+@@ -72,16 +72,14 @@ extern QEMU_PLUGIN_EXPORT int qemu_plugin_version;
+ #define QEMU_PLUGIN_VERSION 4
+ #define QEMU_PLUGIN_MAE_EXTENSIONS
+ 
++
+ #define QEMU_INLINE_CALLBACK(name, body) \
+-    extern void* name##_start; \
+-    extern void* name##_end; \
+-    static void __attribute__((unused)) name() { \
+-        __asm__(".global " #name "_start\n" #name "_start:"); \
+-        body \
+-        __asm__(".global " #name "_end\n" #name "_end:"); \
++    extern char name##_end; \
++    static void __attribute__((unused, naked)) name() { \
++        body; \
++        asm volatile(".global " #name "_end\n" #name "_end:"); \
+     }
+ 
+-
+ // Define a structure to hold callback bounds
+ typedef struct qemu_plugin_inlined_callback {
+     void* start;
+@@ -90,10 +88,10 @@ typedef struct qemu_plugin_inlined_callback {
+ 
+ // Create a reference to the inline callback
+ #define QEMU_INLINE_CALLBACK_REF(name) \
+-    { \
+-        .start = (void*)&name##_start, \
+-        .end = (void*)&name##_end, \
+-    }
++    ((qemu_plugin_inlined_callback) { \
++        .start = (void*) name, \
++        .end = (void*) &name##_end, \
++    })
+ /**
+  * struct qemu_info_t - system information for plugins
+  *
+diff --git a/plugins/plugin.h b/plugins/plugin.h
+index 04ce6cda8a..4068ff37bb 100644
+--- a/plugins/plugin.h
++++ b/plugins/plugin.h
+@@ -95,7 +95,7 @@ plugin_register_dyn_cb__udata(GArray **arr,
+ 
+ void
+ plugin_register_dyn_cb_inlined(GArray **arr,
+-                                   qemu_plugin_inlined_callback cb)
++                                   qemu_plugin_inlined_callback cb);
+ 
+ void
+ plugin_register_dyn_cond_cb__udata(GArray **arr,
+diff --git a/tcg/i386/tcg-target.c.inc b/tcg/i386/tcg-target.c.inc
+index 1bf50f1f62..9fb4bdf6e6 100644
+--- a/tcg/i386/tcg-target.c.inc
++++ b/tcg/i386/tcg-target.c.inc
+@@ -1217,6 +1217,15 @@ static void tcg_out_ld(TCGContext *s, TCGType type, TCGReg ret,
+     }
+ }
+ 
++static void tcg_put_raw(TCGContext *s, const void *buf, const void* end_)
++{
++    const uint8_t *p = buf;
++    const uint8_t *end = end_;
++    while (p < end) {
++        tcg_out8(s, *p++);
++    }
++}
++
+ static void tcg_out_st(TCGContext *s, TCGType type, TCGReg arg,
+                        TCGReg arg1, intptr_t arg2)
+ {
+diff --git a/tcg/tcg.c b/tcg/tcg.c
+index 9776330bf6..df1648222b 100644
+--- a/tcg/tcg.c
++++ b/tcg/tcg.c
+@@ -6194,7 +6194,7 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb, uint64_t pc_start)
+ 
+         switch (opc) {
+         case INDEX_op_plugin_inlined_cb:
+-            tcg_put_raw(s, op->args[0], op->args[1]);
++            tcg_put_raw(s, (const void*) op->args[0], (const void*) op->args[1]);
+             break;
+         case INDEX_op_mov_i32:
+         case INDEX_op_mov_i64:
+-- 
+2.47.0
+

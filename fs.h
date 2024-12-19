@@ -12,3 +12,5 @@ int fs_init();
 int fs_handshake();
 /// Main loop for the fuzzer.
 int fs_loop(qemu_plugin_id_t id, void(*possible_inter)(qemu_plugin_id_t));
+
+unsigned char* generate_assembly_bytes(unsigned char* buf, uint64_t address_);

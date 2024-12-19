@@ -62,6 +62,9 @@ cmplog-bootstrapper: cmplog-bootstrapper.c cmplog.so
 	@echo "Building cmplog-bootstrapper for $(TARGET_FULLPATH)"
 	$(CC) -g -O3 -DQEMU='"$(QEMUPATH)/build/qemu-x86_64"' -DQEMU_PLUGIN='"$(ROOT_DIR)/cmplog.so"' -DTARGET='"$(TARGET_FULLPATH)"' -o $@ cmplog-bootstrapper.c
 
+test-targets/get-loop:
+	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ test-targets/get-loop.c -fno-stack-protector
+
 test-targets/coverage:
 	$(CC) -DTARGET='"$(TARGET_FULLPATH)"' -O3 -g -nostdlib -o $@ test-targets/coverage.c -fno-stack-protector
 

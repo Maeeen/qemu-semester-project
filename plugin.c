@@ -9,6 +9,8 @@
 #endif
 
 #define ENABLE_TSR
+#define ENABLE_TSR_CHAIN
+#define INLINE_COVERAGE
 
 #ifndef COMPATIBILITY_VERSION
   #define COMPATIBILITY_VERSION QEMU_PLUGIN_VERSION
@@ -43,6 +45,13 @@ void setup_callbacks(qemu_plugin_id_t id);
 /// Setups callbacks to be called when the plugin is loaded.
 void setup_initial_callbacks(qemu_plugin_id_t id);
 
+// ---- Inline callback ----
+#ifdef INLINE_COVERAGE
+#ifndef QEMU_PLUGIN_MAE_EXTENSIONS
+#error "This plugin requires QEMU to be compiled with the patches provided in `qemu-proposal-patches`"
+#endif
+#endif
+
 // ---- TSR related ----
 #ifdef ENABLE_TSR
 
@@ -52,23 +61,40 @@ void setup_initial_callbacks(qemu_plugin_id_t id);
 
 /// Translation requests
 int TSR[2] = { 0 };
+int TSRC[2] = { 0 };
 /// Handle TSR
 void handle_tsr(qemu_plugin_id_t id) {
   uint64_t vaddr;
   while (1) {
     if (read(TSR[0], &vaddr, sizeof(uint64_t)) == -1) {
       if (errno == EAGAIN) {
-        return;
+        break;
       }
     }
     if (qemu_plugin_prefetch(id, vaddr)) {
       pf("Successful prefetch\n");
     }
   }
+  #ifdef ENABLE_TSR_CHAIN
+  while (1) {
+    if (read(TSRC[0], &vaddr, sizeof(uint64_t)) == -1) {
+      if (errno == EAGAIN) {
+        break;
+      }
+    }
+    uint64_t next_tb;
+    int tb_exit;
+    read(TSRC[0], &next_tb, sizeof(uint64_t));
+    read(TSRC[0], &tb_exit, sizeof(int));
+    if (qemu_plugin_prechain(id, vaddr, next_tb, tb_exit)) {
+      pf("[%d] Successful prechain\n", getpid());
+    }
+  }
+  #endif
 }
 #endif
 
-void inter_fork(qemu_plugin_id_t id) {
+inline static void __attribute__((always_inline)) inter_fork(qemu_plugin_id_t id) {
   #ifdef ENABLE_TSR
     handle_tsr(id);
   #endif
@@ -84,7 +110,9 @@ void plugin_fork_start(qemu_plugin_id_t id) {
   // Two conditions should be met: we are starting user code and we have not forked yet.
   if (!is_forked && has_started) {
     is_forked = 1;
-    // qemu_plugin_reset(id, test);
+    #ifndef FORK_AT_VCPU_INIT
+      qemu_plugin_register_vcpu_syscall_cb(id, NULL);
+    #endif
 
     #ifdef CMPLOG
       // declare available registers for cmplog, to be able to find them back easily.
@@ -132,6 +160,7 @@ void plugin_fork_start(qemu_plugin_id_t id) {
         #ifdef ENABLE_TSR
           handle_tsr(id);
         #endif
+        pf("Parent: %d\n", getpid());
         pf("Press a key to launch a new instance.\n");
         getchar();
         if (fork() == 0) break;
@@ -148,9 +177,23 @@ void syscall_cb(qemu_plugin_id_t id, unsigned int vcpu_index,
   uint64_t a3, uint64_t a4, uint64_t a5,
   uint64_t a6, uint64_t a7, uint64_t a8) {
   #ifndef FORK_AT_VCPU_INIT
-    if (unlikely(!is_forked)) {
+    if (unlikely(!is_forked && has_started)) {
       plugin_fork_start(id);
+    } else if (likely(is_forked)) {
+      printf("Syscall %ld\n", num);
     }
+  #endif
+}
+
+void on_chain(qemu_plugin_id_t id, uint64_t pc, uint64_t next_pc, int tb_exit) {
+  if (unlikely(!is_forked)) {
+    return;
+  }
+  // pf("[%d] Chained %zu, %zu\n", getpid(), pc, next_pc);
+  #ifdef ENABLE_TSR_CHAIN
+  write(TSRC[1], &pc, sizeof(uint64_t));
+  write(TSRC[1], &next_pc, sizeof(uint64_t));
+  write(TSRC[1], &tb_exit, sizeof(int));
   #endif
 }
 
@@ -300,6 +343,29 @@ void insn_exec(unsigned int vcpu_index, void* data) {
 }
 #endif
 
+// static const char* hi = "hi world!\n";
+
+// QEMU_INLINE_CALLBACK(some_callback,
+//   __asm__(
+//     "mov $1234567, %%rax \n\t"        // syscall: write
+//     "mov $1, %%rdi \n\t"        // file descriptor: stdout
+//     "sub $8, %%rsp \n\t"        // allocate space on the stack
+//     "movb $'h', (%%rsp) \n\t"   // write 'h' to the stack
+//     "movb $'i', 1(%%rsp) \n\t"  // write 'i' to the stack
+//     "mov %%rsp, %%rsi \n\t"     // address of the string
+//     "mov $2, %%rdx \n\t"        // length of the string
+//     "syscall \n\t"              // invoke syscall
+//     "add $8, %%rsp \n\t"        // restore stack pointer
+//     "int $0x03"
+//     :
+//     : // No input operands
+//     : "rax", "rdi", "rsi", "rdx", "memory" // Clobbered registers
+//   );
+// )
+
+
+unsigned char callback_asm[39];
+
 void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   #ifdef INSTRUMENT_AFTER_START
   if (unlikely(has_started == 0)) {
@@ -326,13 +392,25 @@ void vcpu_tb_trans(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   _Static_assert(sizeof(void*) >= sizeof(size_t), "Invalid architecture.");
 
   // Virtual address of the first instruction
-  uint64_t vaddr = qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0));
   // Register callback
+
+  #ifdef INLINE_COVERAGE
+  uint64_t vaddr = qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0));
+  generate_assembly_bytes(callback_asm, vaddr);
+  struct qemu_plugin_inlined_callback cb = ((struct qemu_plugin_inlined_callback) {
+    .start = callback_asm,
+    .end = &((char*) callback_asm)[39]
+  });
+  qemu_plugin_register_vcpu_tb_exec_cb_inlined(tb,cb);
+  #else
+  uint64_t vaddr = qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0));
   qemu_plugin_register_vcpu_tb_exec_cb(tb, tb_exec, QEMU_PLUGIN_CB_NO_REGS, (void*) vaddr);
+  #endif
 
   #ifdef ENABLE_TSR
+    uint64_t vaddrTSR = qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0));
     // Forward to parent the request
-    write(TSR[1], &vaddr, sizeof(uint64_t));
+    write(TSR[1], &vaddrTSR, sizeof(uint64_t));
   #endif
 
   // In case of cmplog
@@ -382,6 +460,7 @@ void setup_initial_callbacks(qemu_plugin_id_t id) {
   #else
   qemu_plugin_register_vcpu_init_cb(id, vcpu_init);
   #endif
+  qemu_plugin_register_vcpu_tb_chain_cb(id, on_chain);
 }
 
 #ifdef ENABLE_TSR
@@ -401,6 +480,23 @@ void tsr_setup() {
 }
 #endif
 
+#ifdef ENABLE_TSR_CHAIN
+void tsrc_setup() {
+  if (pipe(TSRC)) {
+    pf("Error creating disassembly pipe.\n");
+    return;
+  }
+  if (fcntl(TSRC[0], F_SETFL, O_NONBLOCK)) {
+    pf("Error setting non-blocking mode on disassembly pipe.\n");
+    return;
+  }
+  if (fcntl(TSRC[1], F_SETFL, O_NONBLOCK)) {
+    pf("Error setting non-blocking mode on disassembly pipe.\n");
+    return;
+  }
+}
+#endif
+
 QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info, int argc, char **argv) {
   #ifdef CMPLOG
     if (disas_init(info->target_name)) {
@@ -411,6 +507,9 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
 
   #ifdef ENABLE_TSR
     tsr_setup();
+  #endif
+  #ifdef ENABLE_TSR_CHAIN
+    tsrc_setup();
   #endif
 
   setup_initial_callbacks(id);
